@@ -3,7 +3,7 @@
 //! Requires Accessibility permission: System Settings → Privacy & Security
 //! → Accessibility → enable TrackBall Watch.
 
-use crate::injector::platform::{InputInjector, InjectorError};
+use crate::injector::platform::{InjectorError, InputInjector};
 
 #[cfg(target_os = "macos")]
 mod imp {
@@ -110,7 +110,12 @@ mod imp {
     impl InputInjector for MacOSInjector {
         fn move_relative(&self, dx: f64, dy: f64) -> Result<(), InjectorError> {
             let (cx, cy) = current_mouse_position();
-            self.post_mouse_event(K_CGEVENT_MOUSE_MOVED, cx + dx, cy + dy, K_CGMOUSE_BUTTON_LEFT);
+            self.post_mouse_event(
+                K_CGEVENT_MOUSE_MOVED,
+                cx + dx,
+                cy + dy,
+                K_CGMOUSE_BUTTON_LEFT,
+            );
             Ok(())
         }
 

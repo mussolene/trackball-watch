@@ -4,7 +4,6 @@
 //! the cursor continues to move with the given velocity, decelerating
 //! each frame by a friction coefficient until speed drops below threshold.
 
-
 /// Trackball physics state.
 #[derive(Debug, Clone)]
 pub struct TrackballState {
@@ -114,12 +113,21 @@ mod tests {
         fast.fling(100.0, 0.0);
 
         let mut slow_frames = 0;
-        while slow.coasting { slow.tick(); slow_frames += 1; }
+        while slow.coasting {
+            slow.tick();
+            slow_frames += 1;
+        }
 
         let mut fast_frames = 0;
-        while fast.coasting { fast.tick(); fast_frames += 1; }
+        while fast.coasting {
+            fast.tick();
+            fast_frames += 1;
+        }
 
-        assert!(fast_frames < slow_frames, "higher friction (0.70) should stop faster");
+        assert!(
+            fast_frames < slow_frames,
+            "higher friction (0.70) should stop faster"
+        );
     }
 
     #[test]
@@ -149,6 +157,10 @@ mod tests {
             total_x += dx;
         }
         // With v0=20 and friction=0.92, total ~= v0 / (1 - 0.92) = 250 px
-        assert!(total_x > 100.0 && total_x < 500.0, "total travel: {}", total_x);
+        assert!(
+            total_x > 100.0 && total_x < 500.0,
+            "total travel: {}",
+            total_x
+        );
     }
 }

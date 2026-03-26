@@ -1,0 +1,48 @@
+---
+description: Rust coding conventions for the desktop host backend
+globs: apps/host-desktop/src-tauri/**/*.rs
+alwaysApply: false
+---
+
+# Rust Conventions
+
+## Module Structure
+
+```
+src/
+├── lib.rs           — Tauri app setup, state management, event dispatch
+├── main.rs          — Entry point (Tauri bootstrap)
+├── engine/          — Input processing pipeline
+│   ├── kalman.rs    — 2D Kalman filter (state: [x, y, vx, vy])
+│   ├── accel.rs     — Acceleration curves (Linear/Quadratic/S-curve)
+│   ├── trackball.rs — Trackball physics (fling + friction decay)
+│   └── gestures.rs  — Gesture type definitions
+├── protocol/        — TBP wire format
+│   ├── packets.rs   — Header/payload encode/decode (bincode v2)
+│   └── crypto.rs    — AES-128-GCM, X25519 ECDH, HKDF key derivation
+├── server/          — Network layer
+│   ├── udp.rs       — Tokio UDP server on port 47474
+│   ├── connection.rs— Session state machine (handshaking→connected→timeout)
+│   └── mdns.rs      — mDNS service registration via mdns-sd
+├── injector/        — Platform input injection
+│   ├── platform.rs  — InputInjector trait + InjectorError
+│   ├── macos.rs     — CGEvent-based injection (requires Accessibility)
+│   ├── windows.rs   — SendInput-based injection
+│   └── linux.rs     — Stub/placeholder
+└── settings/        — Configuration persistence
+    ├── config.rs    — AppConfig serde + file I/O
+    └── profiles.rs  — Built-in profiles (Precise/Default/Fast/Linear)
+```
+
+## Rules
+
+- Run `cargo fmt` before committing; CI enforces `cargo fmt --check`
+- Run `cargo clippy -- -D warnings` — zero warnings policy in CI
+- Run `cargo test --all-features` — includes proptest round-trip tests
+- Use `anyhow::Result` for fallible functions; `thiserror` for domain error enums
+- Serialization: `bincode v2` (RC) with fixed-int encoding for protocol; `serde_json` for config
+- Async runtime: `tokio` with `features = ["full"]`
+- Feature flag `testing` enables `proptest` in library code
+- Performance: keep the hot path (Touch → Kalman → inject) allocation-free
+- All `#[cfg(target_os)]` code lives in the `injector/` submodules; never put platform-specific code elsewhere
+- Config file path: macOS `~/Library/Application Support/TrackBallWatch/config.json`, Windows `%APPDATA%\TrackBallWatch\config.json`

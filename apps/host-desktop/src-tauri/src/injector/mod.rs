@@ -9,7 +9,7 @@ pub mod windows;
 #[cfg(target_os = "linux")]
 pub mod linux;
 
-use platform::{InputInjector, InjectorError};
+use platform::{InjectorError, InputInjector};
 use std::sync::Arc;
 
 /// Create the platform-appropriate input injector.

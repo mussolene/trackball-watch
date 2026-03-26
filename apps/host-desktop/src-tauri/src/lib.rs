@@ -6,9 +6,9 @@ pub mod settings;
 
 use std::sync::{Arc, Mutex};
 use tauri::{
-    Manager,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
+    Manager,
 };
 
 use engine::kalman::{Kalman2D, KalmanConfig};
@@ -34,7 +34,13 @@ impl AppState {
             r_noise: config.kalman_r_noise,
         });
         let trackball = TrackballState::new(config.trackball_friction, 0.5);
-        Self { config, kalman, trackball, last_touch_x: 0.0, last_touch_y: 0.0 }
+        Self {
+            config,
+            kalman,
+            trackball,
+            last_touch_x: 0.0,
+            last_touch_y: 0.0,
+        }
     }
 }
 
@@ -46,10 +52,7 @@ fn get_config(state: tauri::State<Arc<Mutex<AppState>>>) -> AppConfig {
 }
 
 #[tauri::command]
-fn save_config(
-    config: AppConfig,
-    state: tauri::State<Arc<Mutex<AppState>>>,
-) -> Result<(), String> {
+fn save_config(config: AppConfig, state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(), String> {
     config.save().map_err(|e| e.to_string())?;
     let mut s = state.lock().unwrap();
     s.kalman = Kalman2D::new(KalmanConfig {
@@ -173,24 +176,23 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>) {
             let _ = injector.move_relative(sx, sy);
         }
 
-        InputEvent::Gesture(_, payload) => {
-            match GestureType::try_from(payload.gesture_type).ok() {
-                Some(GestureType::Tap) => {
-                    let _ = injector.left_click();
-                }
-                Some(GestureType::DoubleTap) => {
-                    let _ = injector.left_click();
-                    let _ = injector.left_click();
-                }
-                Some(GestureType::LongPress) => {
-                    let _ = injector.right_click();
-                }
-                Some(GestureType::Fling) if s.config.mode == InputMode::Trackball => {
-                    s.trackball.fling(payload.param1 as f64, payload.param2 as f64);
-                }
-                _ => {}
+        InputEvent::Gesture(_, payload) => match GestureType::try_from(payload.gesture_type).ok() {
+            Some(GestureType::Tap) => {
+                let _ = injector.left_click();
             }
-        }
+            Some(GestureType::DoubleTap) => {
+                let _ = injector.left_click();
+                let _ = injector.left_click();
+            }
+            Some(GestureType::LongPress) => {
+                let _ = injector.right_click();
+            }
+            Some(GestureType::Fling) if s.config.mode == InputMode::Trackball => {
+                s.trackball
+                    .fling(payload.param1 as f64, payload.param2 as f64);
+            }
+            _ => {}
+        },
 
         InputEvent::Crown(_, payload) => {
             let _ = injector.scroll_vertical(payload.delta as f64 / 100.0);

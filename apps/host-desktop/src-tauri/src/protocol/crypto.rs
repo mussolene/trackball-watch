@@ -64,11 +64,7 @@ impl SessionKey {
     /// Encrypt `plaintext` using the packet header as AAD.
     ///
     /// Returns ciphertext || tag (16 extra bytes).
-    pub fn encrypt(
-        &self,
-        header: &PacketHeader,
-        plaintext: &[u8],
-    ) -> Result<Vec<u8>, CryptoError> {
+    pub fn encrypt(&self, header: &PacketHeader, plaintext: &[u8]) -> Result<Vec<u8>, CryptoError> {
         let nonce = make_nonce(header.seq, header.timestamp_us);
         let aad = make_aad(header)?;
         self.cipher

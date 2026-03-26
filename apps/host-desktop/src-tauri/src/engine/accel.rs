@@ -3,7 +3,7 @@
 //! Transforms raw touch delta into screen delta with configurable curves.
 
 /// Acceleration curve type.
-#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CurveType {
     /// Linear: out = sensitivity * delta
@@ -11,13 +11,8 @@ pub enum CurveType {
     /// Quadratic: out = sensitivity * delta^2 * sign(delta)
     Quadratic,
     /// S-curve (tanh): out = sensitivity * tanh(delta / knee) * max_delta
+    #[default]
     SCurve,
-}
-
-impl Default for CurveType {
-    fn default() -> Self {
-        Self::SCurve
-    }
 }
 
 /// Parameters for acceleration curves.
@@ -85,7 +80,11 @@ mod tests {
 
     #[test]
     fn quadratic_preserves_sign() {
-        let cfg = AccelConfig { curve: CurveType::Quadratic, sensitivity: 1.0, ..Default::default() };
+        let cfg = AccelConfig {
+            curve: CurveType::Quadratic,
+            sensitivity: 1.0,
+            ..Default::default()
+        };
         assert!(apply_curve(3.0, &cfg) > 0.0);
         assert!(apply_curve(-3.0, &cfg) < 0.0);
         assert!((apply_curve(3.0, &cfg) - 9.0).abs() < 1e-9);

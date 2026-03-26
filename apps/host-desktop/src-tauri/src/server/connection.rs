@@ -91,9 +91,9 @@ impl ConnectionManager {
 
     /// Get the active session if connected and not timed out.
     pub fn active_session(&self) -> Option<&Session> {
-        self.session.as_ref().filter(|s| {
-            s.state == ConnectionState::Connected && !s.is_timed_out()
-        })
+        self.session
+            .as_ref()
+            .filter(|s| s.state == ConnectionState::Connected && !s.is_timed_out())
     }
 
     /// Check for timeout and clean up stale sessions.
@@ -101,11 +101,7 @@ impl ConnectionManager {
     pub fn check_timeout(&mut self) -> bool {
         if let Some(ref s) = self.session {
             if s.is_timed_out() {
-                log::warn!(
-                    "Session {} timed out after {:?}",
-                    s.device_id,
-                    s.uptime()
-                );
+                log::warn!("Session {} timed out after {:?}", s.device_id, s.uptime());
                 self.session = None;
                 return true;
             }

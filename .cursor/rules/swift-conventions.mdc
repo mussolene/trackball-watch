@@ -1,0 +1,40 @@
+---
+description: Swift coding conventions for iOS and watchOS apps
+globs: apps/**/*.swift
+alwaysApply: false
+---
+
+# Swift Conventions
+
+## Watch App (`apps/watch-ios/TrackBallWatch Watch App/`)
+
+| File | Role |
+|------|------|
+| `InputCaptureView.swift` | Full-screen `SpatialEventGesture` touch capture |
+| `GestureRecognizer.swift` | On-device gesture classification (tap/fling/swipe) |
+| `WatchSessionManager.swift` | `WCSession.sendMessage()` dispatch to iPhone |
+| `CrownHandler.swift` | Digital Crown → CROWN packets |
+| `TBPPacket.swift` | Little-endian packet serializer matching `tbp_spec.md` |
+| `ExtendedRuntimeManager.swift` | `WKExtendedRuntimeSession` to keep app alive |
+
+## Companion App (`apps/companion-ios/TrackBallCompanion/`)
+
+| File | Role |
+|------|------|
+| `WatchRelayService.swift` | WCSession receiver → UDP bridge |
+| `UDPRelay.swift` | NWConnection UDP client to desktop |
+| `PairingService.swift` | QR code scanning → DesktopConfig storage |
+| `BonjourBrowser.swift` | mDNS `_tbp._udp.local` discovery |
+| `MainView.swift` | SwiftUI main screen |
+| `AppDelegate.swift` | PushKit VoIP background wakeup |
+
+## Rules
+
+- Minimum targets: iOS **17.0** (watch-ios project), iOS **16.0** (companion-ios), watchOS **11.0**
+- SwiftUI for all UI; no UIKit unless framework requires it
+- Packet serialization must match `shared/protocol/tbp_spec.md` exactly (little-endian, fixed sizes)
+- Touch coordinates: normalize `CGPoint` to `-32767..32767` range
+- Gesture recognition runs on-watch to minimize BT traffic
+- Two Xcode projects exist: `apps/watch-ios/TrackBallWatch.xcodeproj` (unified watch+iOS) and `apps/companion-ios/TrackBallCompanion.xcodeproj` (standalone companion)
+- Both projects have `project.yml` for XcodeGen; regenerate with `xcodegen` when targets change
+- Build without signing: `CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO`

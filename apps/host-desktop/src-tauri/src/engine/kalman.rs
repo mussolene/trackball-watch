@@ -22,7 +22,9 @@ impl Mat2 {
     }
 
     fn identity() -> Self {
-        Self { m: [[1.0, 0.0], [0.0, 1.0]] }
+        Self {
+            m: [[1.0, 0.0], [0.0, 1.0]],
+        }
     }
 
     fn add(self, rhs: Self) -> Self {
@@ -143,15 +145,13 @@ impl Mat4 {
     /// Extract the 2×2 top-left block (observation submatrix H * P * H^T).
     fn top_left_2x2(self) -> Mat2 {
         Mat2 {
-            m: [
-                [self.m[0][0], self.m[0][1]],
-                [self.m[1][0], self.m[1][1]],
-            ],
+            m: [[self.m[0][0], self.m[0][1]], [self.m[1][0], self.m[1][1]]],
         }
     }
 }
 
 /// Multiply Mat4 by a 4-vector.
+#[allow(clippy::needless_range_loop)]
 fn mat4_vec4(m: &Mat4, v: [f64; 4]) -> [f64; 4] {
     let mut r = [0.0f64; 4];
     for i in 0..4 {
@@ -249,6 +249,7 @@ impl Kalman2D {
         Self {
             cfg,
             state: [0.0; 4],
+            #[allow(clippy::needless_range_loop)]
             p: Mat4::identity().mul(Mat4 {
                 m: {
                     let mut m = [[0.0f64; 4]; 4];
@@ -305,28 +306,26 @@ impl Kalman2D {
         // P_pred * H^T: since H^T selects columns 0 and 1, this is
         // the first 2 columns of P_pred.
         let mut k = [[0.0f64; 2]; 4];
-        for i in 0..4 {
-            // P_pred * H^T column 0 = P_pred[:, 0]
-            // P_pred * H^T column 1 = P_pred[:, 1]
+        for (i, k_row) in k.iter_mut().enumerate() {
             let ph0 = p_pred.m[i][0];
             let ph1 = p_pred.m[i][1];
-            k[i][0] = ph0 * s_inv.m[0][0] + ph1 * s_inv.m[1][0];
-            k[i][1] = ph0 * s_inv.m[0][1] + ph1 * s_inv.m[1][1];
+            k_row[0] = ph0 * s_inv.m[0][0] + ph1 * s_inv.m[1][0];
+            k_row[1] = ph0 * s_inv.m[0][1] + ph1 * s_inv.m[1][1];
         }
 
         // x_new = x_pred + K * innovation
         let k_inn = mat42_vec2(&k, innovation);
         let mut new_state = [0.0f64; 4];
-        for i in 0..4 {
-            new_state[i] = x_pred[i] + k_inn[i];
+        for (i, ns) in new_state.iter_mut().enumerate() {
+            *ns = x_pred[i] + k_inn[i];
         }
 
         // P_new = (I - K*H) * P_pred
         // K*H is 4×4: (K*H)[i][j] = K[i][0]*H[0][j] + K[i][1]*H[1][j]
         let mut kh = Mat4::zero();
-        for i in 0..4 {
+        for (i, k_row) in k.iter().enumerate() {
             for j in 0..4 {
-                kh.m[i][j] = k[i][0] * self.h[0][j] + k[i][1] * self.h[1][j];
+                kh.m[i][j] = k_row[0] * self.h[0][j] + k_row[1] * self.h[1][j];
             }
         }
         let i_kh = Mat4::identity().sub(kh);
@@ -397,7 +396,12 @@ mod tests {
         let out_mean = outputs.iter().sum::<f64>() / n;
         let out_var = outputs.iter().map(|v| (v - out_mean).powi(2)).sum::<f64>() / n;
 
-        assert!(out_var < in_var, "filter should reduce variance: {} < {}", out_var, in_var);
+        assert!(
+            out_var < in_var,
+            "filter should reduce variance: {} < {}",
+            out_var,
+            in_var
+        );
     }
 
     #[test]

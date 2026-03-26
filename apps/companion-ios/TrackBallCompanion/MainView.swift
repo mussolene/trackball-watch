@@ -4,52 +4,102 @@ import AVFoundation
 struct MainView: View {
     @StateObject private var relay = WatchRelayService.shared
     @StateObject private var pairing = PairingService.shared
-    @State private var showingPairing = false
+    @StateObject private var bonjour = BonjourBrowser()
     @State private var showingScanner = false
+    @State private var showingManualEntry = false
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                // Status card
-                StatusCard(relay: relay)
-
-                // Pairing section
-                if pairing.isPaired {
-                    PairedView(pairing: pairing)
-                } else {
-                    PairButton(showingScanner: $showingScanner)
+            List {
+                // Relay status
+                Section {
+                    StatusRow(relay: relay)
                 }
 
-                Spacer()
+                // Paired desktop
+                if pairing.isPaired, let config = DesktopConfig.load() {
+                    Section("Connected Desktop") {
+                        PairedRow(config: config, pairing: pairing)
+                    }
+                }
+
+                // Bonjour discovery
+                Section {
+                    if bonjour.isSearching && bonjour.discovered.isEmpty {
+                        Label("Searching for nearby desktops…", systemImage: "antenna.radiowaves.left.and.right")
+                            .foregroundStyle(.secondary)
+                            .font(.subheadline)
+                    }
+                    ForEach(bonjour.discovered) { desktop in
+                        DiscoveredRow(desktop: desktop, pairing: pairing)
+                    }
+                } header: {
+                    HStack {
+                        Text("Nearby Desktops")
+                        Spacer()
+                        if bonjour.isSearching {
+                            ProgressView().scaleEffect(0.7)
+                        }
+                    }
+                }
+
+                // Other pairing options
+                Section("Pair Manually") {
+                    Button {
+                        showingScanner = true
+                    } label: {
+                        Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                    }
+                    Button {
+                        showingManualEntry = true
+                    } label: {
+                        Label("Enter IP Address", systemImage: "network")
+                    }
+                }
 
                 // Stats
-                if relay.isRunning {
-                    Text("Packets relayed: \(relay.packetsRelayed)")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                if relay.isRunning && relay.packetsRelayed > 0 {
+                    Section {
+                        Label("Packets relayed: \(relay.packetsRelayed)", systemImage: "arrow.up.arrow.down")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
-            .padding()
             .navigationTitle("TrackBall Watch")
+            .onAppear { bonjour.start() }
+            .onDisappear { bonjour.stop() }
             .sheet(isPresented: $showingScanner) {
                 QRScannerView { code in
                     showingScanner = false
                     if let config = pairing.parsePairingURL(code) {
-                        Task {
-                            await pairing.pair(with: config)
-                        }
+                        Task { await pairing.pair(with: config) }
                     } else {
                         pairing.pairingError = "Invalid QR code"
                     }
                 }
             }
+            .sheet(isPresented: $showingManualEntry) {
+                ManualEntryView(pairing: pairing, isPresented: $showingManualEntry)
+            }
+            .sheet(isPresented: $pairing.showPINEntry) {
+                PINEntryView(pairing: pairing)
+            }
+            .alert("Error", isPresented: Binding(
+                get: { pairing.pairingError != nil },
+                set: { if !$0 { pairing.pairingError = nil } }
+            )) {
+                Button("OK") { pairing.pairingError = nil }
+            } message: {
+                Text(pairing.pairingError ?? "")
+            }
         }
     }
 }
 
-// MARK: - Subviews
+// MARK: - Status row
 
-struct StatusCard: View {
+struct StatusRow: View {
     @ObservedObject var relay: WatchRelayService
 
     var body: some View {
@@ -58,51 +108,152 @@ struct StatusCard: View {
                 .fill(relay.isRunning ? Color.green : Color.red)
                 .frame(width: 10, height: 10)
             Text(relay.isRunning ? "Relay active" : "Relay stopped")
-                .font(.subheadline)
             Spacer()
             Button(relay.isRunning ? "Stop" : "Start") {
                 if relay.isRunning { relay.stop() } else { relay.start() }
             }
             .buttonStyle(.bordered)
+            .controlSize(.small)
         }
-        .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
-struct PairedView: View {
+// MARK: - Paired row
+
+struct PairedRow: View {
+    let config: DesktopConfig
     @ObservedObject var pairing: PairingService
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Desktop paired", systemImage: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-            Button("Unpair") {
+        HStack {
+            Label(config.host, systemImage: "desktopcomputer")
+            Spacer()
+            Text(":\(config.port)")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+        }
+        .swipeActions {
+            Button("Unpair", role: .destructive) {
                 pairing.unpair()
             }
-            .foregroundStyle(.red)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
-struct PairButton: View {
-    @Binding var showingScanner: Bool
+// MARK: - Discovered desktop row
+
+struct DiscoveredRow: View {
+    let desktop: DiscoveredDesktop
+    @ObservedObject var pairing: PairingService
 
     var body: some View {
-        VStack(spacing: 12) {
-            Text("No desktop paired")
-                .foregroundStyle(.secondary)
-            Button(action: { showingScanner = true }) {
-                Label("Scan QR Code", systemImage: "qrcode.viewfinder")
-                    .frame(maxWidth: .infinity)
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(desktop.name)
+                    .font(.subheadline)
+                Text("\(desktop.host):\(desktop.port)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Connect") {
+                pairing.startPairing(with: desktop, requirePIN: false)
             }
             .buttonStyle(.borderedProminent)
+            .controlSize(.small)
         }
-        .padding()
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+}
+
+// MARK: - PIN entry sheet
+
+struct PINEntryView: View {
+    @ObservedObject var pairing: PairingService
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 24) {
+                if let desktop = pairing.pendingDesktop {
+                    VStack(spacing: 8) {
+                        Image(systemName: "desktopcomputer")
+                            .font(.system(size: 48))
+                            .foregroundStyle(.blue)
+                        Text("Connect to")
+                            .foregroundStyle(.secondary)
+                        Text(desktop.name)
+                            .font(.title2.bold())
+                        Text(PairingService.pin(for: desktop))
+                            .font(.system(size: 36, design: .monospaced).bold())
+                            .foregroundStyle(.primary)
+                            .padding(.top, 8)
+                        Text("This code should match what's shown on your desktop.\nLeave blank to skip verification.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+
+                TextField("PIN (optional)", text: $pairing.enteredPIN)
+                    .textFieldStyle(.roundedBorder)
+                    .keyboardType(.numberPad)
+                    .frame(maxWidth: 200)
+
+                Button("Connect") {
+                    pairing.confirmPIN()
+                }
+                .buttonStyle(.borderedProminent)
+
+                Spacer()
+            }
+            .padding()
+            .navigationTitle("Confirm Connection")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { pairing.cancelPIN() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Manual IP entry
+
+struct ManualEntryView: View {
+    @ObservedObject var pairing: PairingService
+    @Binding var isPresented: Bool
+    @State private var host = ""
+    @State private var port = "47474"
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Desktop Address") {
+                    TextField("IP Address (e.g. 192.168.1.5)", text: $host)
+                        .keyboardType(.decimalPad)
+                    TextField("Port", text: $port)
+                        .keyboardType(.numberPad)
+                }
+            }
+            .navigationTitle("Manual Pairing")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { isPresented = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Connect") {
+                        guard let portVal = UInt16(port), !host.isEmpty else { return }
+                        let config = DesktopConfig(host: host, port: portVal, deviceId: UUID().uuidString)
+                        Task {
+                            await pairing.pair(with: config)
+                            isPresented = false
+                        }
+                    }
+                    .disabled(host.isEmpty || UInt16(port) == nil)
+                }
+            }
+        }
     }
 }
 

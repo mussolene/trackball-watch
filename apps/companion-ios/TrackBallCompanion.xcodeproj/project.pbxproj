@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		05B52F7B806F0EBD57595022 /* BonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCD9481534955738BA318219 /* BonjourBrowser.swift */; };
 		1DEDAE811E5EAB55781D8A20 /* WatchRelayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FE686E6FCCCB0ACC578BF2F /* WatchRelayService.swift */; };
 		44E741C89356034F5F73EFD2 /* UDPRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49CEEC2CECE625512BAB9DAC /* UDPRelay.swift */; };
 		492EC103EC4171038A7E32EB /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F182FAA73EEB21748B0B108 /* MainView.swift */; };
@@ -21,9 +22,10 @@
 		49CEEC2CECE625512BAB9DAC /* UDPRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UDPRelay.swift; sourceTree = "<group>"; };
 		5FE686E6FCCCB0ACC578BF2F /* WatchRelayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRelayService.swift; sourceTree = "<group>"; };
 		605B7061298965A6BC3853F1 /* TrackBallCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackBallCompanionApp.swift; sourceTree = "<group>"; };
-		7BB356BD06474ECB5FDF9920 /* TrackBallCompanion.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TrackBallCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		7BB356BD06474ECB5FDF9920 /* TrackBallCompanion.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TrackBallCompanion.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7F182FAA73EEB21748B0B108 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		976941637B102859FF8C472B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		BCD9481534955738BA318219 /* BonjourBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourBrowser.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -39,6 +41,7 @@
 			isa = PBXGroup;
 			children = (
 				976941637B102859FF8C472B /* AppDelegate.swift */,
+				BCD9481534955738BA318219 /* BonjourBrowser.swift */,
 				34D54A928BBB7DDB983CCEEA /* Info.plist */,
 				7F182FAA73EEB21748B0B108 /* MainView.swift */,
 				419B2ED1E7E658F20C61B751 /* PairingService.swift */,
@@ -84,9 +87,10 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2630;
+				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					19020279BE834FB29C91999B = {
+						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -116,6 +120,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				DDBC9559EBE028A5F9C7512E /* AppDelegate.swift in Sources */,
+				05B52F7B806F0EBD57595022 /* BonjourBrowser.swift in Sources */,
 				492EC103EC4171038A7E32EB /* MainView.swift in Sources */,
 				92C37E18E82F49812D2F3483 /* PairingService.swift in Sources */,
 				F7A71A1C8DA5341CCDBD2F40 /* TrackBallCompanionApp.swift in Sources */,
@@ -183,7 +188,6 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -204,7 +208,6 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.9;
@@ -250,7 +253,6 @@
 				DEVELOPMENT_TEAM = "";
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -264,7 +266,6 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.9;

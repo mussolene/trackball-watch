@@ -1,0 +1,27 @@
+---
+description: Svelte 5 frontend conventions for the Tauri desktop UI
+globs: apps/host-desktop/src/**/*.{svelte,ts}
+alwaysApply: false
+---
+
+# Svelte Frontend
+
+## Structure
+
+```
+apps/host-desktop/src/
+├── App.svelte              — Root component
+├── components/
+│   ├── Settings.svelte     — Configuration panel (sensitivity, curve, mode, friction)
+│   └── StatusBar.svelte    — Connection status, latency indicator
+└── main.ts                 — Svelte mount entry point
+```
+
+## Rules
+
+- Svelte **5** with runes (`$state`, `$derived`, `$effect`) — no legacy `$:` reactive statements
+- TypeScript for all `.ts` files
+- Tauri IPC: use `@tauri-apps/api` invoke for Rust commands (`get_config`, `save_config`)
+- Vite 6 dev server on port **1420** (configured in `vite.config.ts`)
+- Keep UI minimal — this is a system tray app, not a full window app
+- Settings map 1:1 to `AppConfig` Rust struct fields

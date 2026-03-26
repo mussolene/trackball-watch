@@ -3,7 +3,7 @@
 //! Does not require administrator privileges.
 //! Uses MOUSEEVENTF_MOVE for relative movement and MOUSEEVENTF_WHEEL for scroll.
 
-use crate::injector::platform::{InputInjector, InjectorError};
+use crate::injector::platform::{InjectorError, InputInjector};
 
 #[cfg(target_os = "windows")]
 mod imp {
@@ -12,7 +12,7 @@ mod imp {
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
         MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL,
-        MOUSE_EVENT_FLAGS, MOUSEINPUT,
+        MOUSEINPUT, MOUSE_EVENT_FLAGS,
     };
     use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
@@ -53,7 +53,9 @@ mod imp {
             use windows::Win32::UI::Input::KeyboardAndMouse::MOUSEEVENTF_ABSOLUTE;
             // MOUSEEVENTF_ABSOLUTE coordinates are 0..65535 mapped to screen
             // We need to convert pixel coords to the normalized range
-            use windows::Win32::UI::WindowsAndMessaging::{GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN};
+            use windows::Win32::UI::WindowsAndMessaging::{
+                GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
+            };
             let screen_w = unsafe { GetSystemMetrics(SM_CXSCREEN) } as f64;
             let screen_h = unsafe { GetSystemMetrics(SM_CYSCREEN) } as f64;
             let nx = ((x / screen_w) * 65535.0) as i32;

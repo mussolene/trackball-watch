@@ -294,7 +294,14 @@ mod tests {
     #[test]
     fn touch_coordinate_extremes() {
         for (x, y) in [(i16::MIN, i16::MAX), (i16::MAX, i16::MIN), (0, 0)] {
-            let p = TouchPayload { touch_id: 0, phase: 1, x, y, pressure: 0, _pad: 0 };
+            let p = TouchPayload {
+                touch_id: 0,
+                phase: 1,
+                x,
+                y,
+                pressure: 0,
+                _pad: 0,
+            };
             let (decoded, _) = decode_touch(&encode_touch(&p).unwrap()).unwrap();
             assert_eq!(p, decoded);
         }
@@ -315,7 +322,10 @@ mod tests {
 
     #[test]
     fn crown_round_trip() {
-        let p = CrownPayload { delta: -256, velocity: 1024 };
+        let p = CrownPayload {
+            delta: -256,
+            velocity: 1024,
+        };
         let bytes = encode_crown(&p).unwrap();
         let (decoded, _) = decode_crown(&bytes).unwrap();
         assert_eq!(p, decoded);

@@ -1,0 +1,53 @@
+---
+description: TrackBall Watch project overview — architecture, structure, and conventions
+alwaysApply: true
+---
+
+# TrackBall Watch — Project Context
+
+Apple Watch → iPhone → Desktop cursor control system. Watch face acts as a trackball/trackpad surface.
+
+## Data Flow
+
+```
+Apple Watch (touch/gesture/crown)
+  → WatchConnectivity BT (~3-5ms)
+  → iPhone companion (relay)
+  → Wi-Fi UDP port 47474 (~2-5ms)
+  → Desktop host (Kalman filter → accel curve → OS input injection)
+```
+
+Target latency: p50 < 15ms, p99 < 30ms.
+
+## Repository Layout
+
+| Path | Stack | Purpose |
+|------|-------|---------|
+| `apps/host-desktop/` | Rust + Tauri 2 + Svelte 5 + Vite 6 | Desktop UDP server, input pipeline, tray UI |
+| `apps/host-desktop/src-tauri/` | Rust (tokio, bincode v2, aes-gcm) | Backend: protocol, Kalman, accel curves, injection |
+| `apps/host-desktop/src/` | Svelte 5 + TypeScript | Frontend: settings UI, status bar |
+| `apps/watch-ios/` | Swift / SwiftUI | Watch app + iOS companion (Xcode project) |
+| `apps/companion-ios/` | Swift | Standalone iPhone relay app (Xcode project) |
+| `shared/protocol/tbp_spec.md` | Markdown | TBP binary protocol specification |
+| `tools/latency-tester/` | Rust | UDP RTT benchmark CLI |
+
+## Build Commands
+
+- **Desktop dev:** `cd apps/host-desktop && npm install && npm run tauri dev`
+- **Desktop build:** `npm run tauri build`
+- **Rust tests:** `cd apps/host-desktop/src-tauri && cargo test --all-features`
+- **Rust lint:** `cargo fmt --check && cargo clippy -- -D warnings`
+- **iOS/Watch:** open `.xcodeproj` files in Xcode; or `xcodebuild` with `CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO`
+- **Latency test:** `cd tools/latency-tester && cargo run -- --host <ip> --count 200`
+
+## Key Protocol Facts (TBP)
+
+- UDP port **47474**, mDNS `_tbp._udp.local`
+- 8-byte header + payload; all integers **little-endian**
+- Packet types: TOUCH (0x01), GESTURE (0x02), CROWN (0x03), HANDSHAKE (0x10), HEARTBEAT (0x11), PING/PONG (0x20/0x21)
+- Encryption: AES-128-GCM, X25519 ECDH key exchange, HKDF-SHA256 salt "TBP-v1"
+- Coordinates normalized -32767..32767
+
+## CI Pipeline
+
+GitHub Actions: `cargo fmt/clippy/test`, `cargo-tarpaulin` coverage, `xcodebuild` for Swift. Gate job: `ci-passes` requires `rust-check`, `rust-check-tools`, `swift-check`.

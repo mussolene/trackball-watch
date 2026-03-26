@@ -45,6 +45,7 @@ targets:
         INFOPLIST_FILE: "TrackBallWatch Watch App/Info.plist"
         TARGETED_DEVICE_FAMILY: "4"
         WK_APPLICATION: YES
+        WK_COMPANION_APP_BUNDLE_IDENTIFIER: com.trackball-watch.app
 
   TrackBallWatch-Tests:
     type: bundle.unit-test
@@ -64,10 +65,11 @@ schemes:
   TrackBallWatch:
     build:
       targets:
-        TrackBallWatch-watchOS: all
         TrackBallCompanion-iOS: all
+        TrackBallWatch-watchOS: all
     run:
       config: Debug
+      executable: TrackBallCompanion-iOS
     test:
       config: Debug
       targets:

@@ -92,8 +92,8 @@ impl UdpServer {
             anyhow::bail!("packet too short: {} bytes", data.len());
         }
 
-        let (header, header_len) = decode_header(data)
-            .map_err(|e| anyhow::anyhow!("header decode: {:?}", e))?;
+        let (header, header_len) =
+            decode_header(data).map_err(|e| anyhow::anyhow!("header decode: {:?}", e))?;
 
         let payload = &data[header_len..];
 
@@ -109,8 +109,8 @@ impl UdpServer {
 
         let event = match header.packet_type {
             packet_type::TOUCH => {
-                let (payload, _) = decode_touch(payload)
-                    .map_err(|e| anyhow::anyhow!("touch decode: {:?}", e))?;
+                let (payload, _) =
+                    decode_touch(payload).map_err(|e| anyhow::anyhow!("touch decode: {:?}", e))?;
                 InputEvent::Touch(header, payload)
             }
             packet_type::GESTURE => {
@@ -119,8 +119,8 @@ impl UdpServer {
                 InputEvent::Gesture(header, payload)
             }
             packet_type::CROWN => {
-                let (payload, _) = decode_crown(payload)
-                    .map_err(|e| anyhow::anyhow!("crown decode: {:?}", e))?;
+                let (payload, _) =
+                    decode_crown(payload).map_err(|e| anyhow::anyhow!("crown decode: {:?}", e))?;
                 InputEvent::Crown(header, payload)
             }
             packet_type::HEARTBEAT => InputEvent::Heartbeat(header),
@@ -158,7 +158,7 @@ mod tests {
 
     #[tokio::test]
     async fn server_binds_and_receives() {
-        use crate::protocol::packets::{encode_header, PacketHeader, TouchPayload, encode_touch};
+        use crate::protocol::packets::{encode_header, encode_touch, PacketHeader, TouchPayload};
 
         let port = 47500; // use a different port for tests
         let mut server = UdpServer::new(port);
@@ -189,11 +189,21 @@ mod tests {
             flags: 0,
             timestamp_us: 1000,
         };
-        let touch = TouchPayload { touch_id: 0, phase: 2, x: 1000, y: 500, pressure: 128, _pad: 0 };
+        let touch = TouchPayload {
+            touch_id: 0,
+            phase: 2,
+            x: 1000,
+            y: 500,
+            pressure: 128,
+            _pad: 0,
+        };
 
         let mut packet = encode_header(&header).unwrap();
         packet.extend(encode_touch(&touch).unwrap());
-        client.send_to(&packet, format!("127.0.0.1:{}", port)).await.unwrap();
+        client
+            .send_to(&packet, format!("127.0.0.1:{}", port))
+            .await
+            .unwrap();
 
         // Wait for event
         tokio::time::sleep(Duration::from_millis(100)).await;

@@ -70,8 +70,7 @@ fn hostname() -> String {
     std::env::var("HOSTNAME")
         .or_else(|_| {
             // Fallback: read from system
-            std::fs::read_to_string("/etc/hostname")
-                .map(|s| s.trim().to_string())
+            std::fs::read_to_string("/etc/hostname").map(|s| s.trim().to_string())
         })
         .unwrap_or_else(|_| "localhost".to_string())
 }
