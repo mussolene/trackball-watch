@@ -1,0 +1,127 @@
+import Foundation
+import WatchConnectivity
+import Network
+import Combine
+
+/// Core service: receives TBP packets from Apple Watch via WatchConnectivity
+/// and relays them to the desktop host via UDP.
+///
+/// Architecture:
+///   Apple Watch → WCSession.sendMessage → WatchRelayService → UDP → Desktop
+@MainActor
+final class WatchRelayService: NSObject, ObservableObject {
+    static let shared = WatchRelayService()
+
+    @Published var isRunning = false
+    @Published var packetsRelayed: Int = 0
+
+    private var wcSession: WCSession?
+    private var udpRelay: UDPRelay?
+    private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
+    private var pairedDesktop: DesktopConfig?
+
+    override private init() {
+        super.init()
+        // Load saved desktop config
+        pairedDesktop = DesktopConfig.load()
+    }
+
+    // MARK: - Lifecycle
+
+    func start() {
+        guard !isRunning else { return }
+        activateWCSession()
+        if let desktop = pairedDesktop {
+            connectUDP(to: desktop)
+        }
+        isRunning = true
+    }
+
+    func stop() {
+        wcSession?.delegate = nil
+        udpRelay?.cancel()
+        udpRelay = nil
+        isRunning = false
+        endBackgroundTask()
+    }
+
+    // MARK: - WatchConnectivity
+
+    private func activateWCSession() {
+        guard WCSession.isSupported() else { return }
+        let session = WCSession.default
+        session.delegate = self
+        session.activate()
+        wcSession = session
+    }
+
+    // MARK: - UDP relay
+
+    func connectUDP(to desktop: DesktopConfig) {
+        pairedDesktop = desktop
+        DesktopConfig.save(desktop)
+
+        udpRelay = UDPRelay(host: desktop.host, port: desktop.port)
+        udpRelay?.start()
+    }
+
+    func relay(_ data: Data) {
+        udpRelay?.send(data)
+        Task { @MainActor in
+            packetsRelayed += 1
+        }
+    }
+
+    // MARK: - Background execution
+
+    func beginBackgroundTask() {
+        guard backgroundTaskId == .invalid else { return }
+        backgroundTaskId = UIApplication.shared.beginBackgroundTask(withName: "TBPRelay") { [weak self] in
+            self?.endBackgroundTask()
+        }
+    }
+
+    private func endBackgroundTask() {
+        guard backgroundTaskId != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTaskId)
+        backgroundTaskId = .invalid
+    }
+}
+
+// MARK: - WCSessionDelegate
+
+extension WatchRelayService: WCSessionDelegate {
+    nonisolated func session(
+        _ session: WCSession,
+        activationDidCompleteWith activationState: WCSessionActivationState,
+        error: Error?
+    ) {
+        if let error = error {
+            print("[WatchRelay] WCSession activation error: \(error)")
+        }
+    }
+
+    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+    nonisolated func sessionDidDeactivate(_ session: WCSession) {
+        session.activate() // Re-activate on watch switch
+    }
+
+    /// Real-time message from watch (primary path, < 5ms when active).
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        guard let data = message["d"] as? Data else { return }
+        Task { @MainActor in
+            self.relay(data)
+        }
+    }
+
+    /// Queued message fallback (when watch app not in foreground).
+    nonisolated func session(
+        _ session: WCSession,
+        didReceiveUserInfo userInfo: [String: Any]
+    ) {
+        guard let data = userInfo["d"] as? Data else { return }
+        Task { @MainActor in
+            self.relay(data)
+        }
+    }
+}
