@@ -35,6 +35,9 @@ node_modules/
 *.key
 *.cert
 
+# Local Xcode settings (DEVELOPMENT_TEAM, etc.)
+Local.xcconfig
+
 # OS
 .DS_Store
 .DS_Store?
