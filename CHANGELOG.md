@@ -7,25 +7,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- Initial repository structure
-- TBP (TrackBall Protocol) specification
-
-## [1.0.0] - TBD
+## [1.0.0] - 2026-03-26
 
 ### Added
-- macOS support with CGEvent mouse injection
-- Windows support with SendInput API
-- Apple Watch 7 app (watchOS 10+)
-- iPhone companion relay app
-- Trackpad mode with S-curve acceleration
-- Trackball mode with inertia physics
-- 2D Kalman filter for touch smoothing
-- AES-128-GCM encrypted protocol
-- mDNS device discovery
-- QR code pairing flow
-- System tray UI with connection status
-- Settings panel: sensitivity, mode, hand preference
-- macOS .dmg installer with notarization
-- Windows .msi installer with WiX
+
+#### Desktop Host (macOS + Windows)
+- TBP (TrackBall Protocol) binary UDP protocol with bincode serialization
+- AES-128-GCM encrypted sessions via X25519 ECDH pairing
+- mDNS device discovery (`_tbp._udp.local`)
+- 2D Kalman filter for touch input smoothing (Q_pos=0.1, Q_vel=1.0, R=0.5)
+- S-curve (tanh) acceleration with configurable sensitivity and knee point
+- Trackball inertia physics with friction-based velocity decay
+- macOS input injection via CGEvent (requires Accessibility permission)
+- Windows input injection via SendInput (no admin required)
+- System tray UI with connection status indicator (green/yellow/red)
+- Settings panel: mode, hand preference, sensitivity, acceleration curve
+- JSON configuration persistence
+- Built-in profiles: Precise, Default, Fast, Linear
+
+#### Apple Watch App (watchOS 10+)
+- Full-screen touch capture via `SpatialEventGesture`
+- Touch coordinates normalized to -32767..32767
+- On-device gesture recognition: tap, double-tap, long-press, swipe, fling
+- Digital Crown → scroll events
+- Long-press Crown → trackpad/trackball mode switch
+- Haptic feedback on tap and gesture detection
+- `WKExtendedRuntimeSession(.workout)` for background operation
+- `WCSession.sendMessage()` with `transferUserInfo` fallback
+
+#### iPhone Companion (iOS 16+)
+- WatchConnectivity bridge: receives packets from watch and relays via UDP
+- `NWConnection` UDP client to desktop host
+- QR code pairing: scans `tbp://pair?host=&port=&id=` URL
+- PushKit VoIP registration for background wakeup
+- Connection status UI
+
+#### CI/CD
+- GitHub Actions CI: fmt + clippy + test + coverage (tarpaulin → codecov)
+- Release workflow: macOS universal DMG + notarization, Windows MSI + signing
 - TestFlight distribution for Watch + iPhone apps
+- Property-based tests with proptest for packet round-trips
+
+#### Tools
+- `tools/latency-tester`: E2E RTT benchmark (p50/p95/p99 reporting)
+
+### Technical Targets (Phase 1)
+- Latency: p50 < 15ms, p99 < 30ms on Wi-Fi
+- Session stability: 60+ minutes without disconnect
+- Battery: 4+ hours continuous on Apple Watch 7
