@@ -73,8 +73,9 @@ final class WatchRelayService: NSObject, ObservableObject {
         udpRelay = relay
 
         // Send heartbeats every 1s so the desktop session doesn't time out (timeout = 3s)
+        // Timer closure is Sendable — access @MainActor property via Task
         heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            self?.udpRelay?.sendHeartbeat()
+            Task { @MainActor [weak self] in self?.udpRelay?.sendHeartbeat() }
         }
     }
 
