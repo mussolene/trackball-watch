@@ -15,6 +15,20 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "610D79C56E5FAFC28C47A38D"
+               BuildableName = "TrackBallCompanion-iOS.app"
+               BlueprintName = "TrackBallCompanion-iOS"
+               ReferencedContainer = "container:TrackBallWatch.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "2363C40FD4BE54CBFE708750"
                BuildableName = "TrackBallWatch-watchOS.app"
                BlueprintName = "TrackBallWatch-watchOS"
@@ -32,9 +46,9 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "2363C40FD4BE54CBFE708750"
-            BuildableName = "TrackBallWatch-watchOS.app"
-            BlueprintName = "TrackBallWatch-watchOS"
+            BlueprintIdentifier = "610D79C56E5FAFC28C47A38D"
+            BuildableName = "TrackBallCompanion-iOS.app"
+            BlueprintName = "TrackBallCompanion-iOS"
             ReferencedContainer = "container:TrackBallWatch.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
@@ -44,9 +58,9 @@
             parallelizable = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "2363C40FD4BE54CBFE708750"
-               BuildableName = "TrackBallWatch-watchOS.app"
-               BlueprintName = "TrackBallWatch-watchOS"
+               BlueprintIdentifier = "FBBAA34B14D2AF7D6E849CE6"
+               BuildableName = "TrackBallWatch-Tests.xctest"
+               BlueprintName = "TrackBallWatch-Tests"
                ReferencedContainer = "container:TrackBallWatch.xcodeproj">
             </BuildableReference>
          </TestableReference>
@@ -68,9 +82,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "2363C40FD4BE54CBFE708750"
-            BuildableName = "TrackBallWatch-watchOS.app"
-            BlueprintName = "TrackBallWatch-watchOS"
+            BlueprintIdentifier = "610D79C56E5FAFC28C47A38D"
+            BuildableName = "TrackBallCompanion-iOS.app"
+            BlueprintName = "TrackBallCompanion-iOS"
             ReferencedContainer = "container:TrackBallWatch.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -87,9 +101,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "2363C40FD4BE54CBFE708750"
-            BuildableName = "TrackBallWatch-watchOS.app"
-            BlueprintName = "TrackBallWatch-watchOS"
+            BlueprintIdentifier = "610D79C56E5FAFC28C47A38D"
+            BuildableName = "TrackBallCompanion-iOS.app"
+            BlueprintName = "TrackBallCompanion-iOS"
             ReferencedContainer = "container:TrackBallWatch.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

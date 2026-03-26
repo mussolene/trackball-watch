@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 import WatchConnectivity
 import Network
 import Combine

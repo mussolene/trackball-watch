@@ -7,8 +7,8 @@ pub mod settings;
 use std::sync::{Arc, Mutex};
 use tauri::{
     Manager,
-    tray::TrayIconBuilder,
     menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
 };
 
 use engine::kalman::{Kalman2D, KalmanConfig};
@@ -17,7 +17,7 @@ use protocol::packets::{GestureType, TouchPhase};
 use server::udp::{InputEvent, UdpServer};
 use settings::config::{AppConfig, InputMode};
 
-/// Shared application state.
+/// Shared application state (input pipeline).
 struct AppState {
     config: AppConfig,
     kalman: Kalman2D,
@@ -34,17 +34,11 @@ impl AppState {
             r_noise: config.kalman_r_noise,
         });
         let trackball = TrackballState::new(config.trackball_friction, 0.5);
-        Self {
-            config,
-            kalman,
-            trackball,
-            last_touch_x: 0.0,
-            last_touch_y: 0.0,
-        }
+        Self { config, kalman, trackball, last_touch_x: 0.0, last_touch_y: 0.0 }
     }
 }
 
-// ── Tauri commands (callable from Svelte UI) ──────────────────────────────────
+// ── Tauri commands ────────────────────────────────────────────────────────────
 
 #[tauri::command]
 fn get_config(state: tauri::State<Arc<Mutex<AppState>>>) -> AppConfig {
@@ -70,7 +64,6 @@ fn save_config(
 
 #[tauri::command]
 fn get_connection_status(_state: tauri::State<Arc<Mutex<AppState>>>) -> String {
-    // Simplified: would query ConnectionManager in real impl
     "disconnected".to_string()
 }
 
@@ -81,68 +74,68 @@ fn get_profiles() -> Vec<settings::profiles::Profile> {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     env_logger::init();
 
     let config = AppConfig::load();
-    let app_state = Arc::new(Mutex::new(AppState::new(config.clone())));
-    let app_state_for_server = app_state.clone();
     let udp_port = config.udp_port;
+    let app_state = Arc::new(Mutex::new(AppState::new(config)));
 
-    // Start UDP server in background
-    tokio::runtime::Runtime::new()
-        .expect("tokio runtime")
-        .block_on(async {
-            // Spawn UDP server
-            let state_cb = app_state_for_server.clone();
-            tokio::spawn(async move {
-                let mut server = UdpServer::new(udp_port);
-                server.on_event(Arc::new(move |event| {
-                    handle_input_event(event, &state_cb);
-                }));
-                if let Err(e) = server.run().await {
-                    log::error!("UDP server error: {}", e);
-                }
-            });
-
-            // Build and run Tauri app
-            tauri::Builder::default()
-                .plugin(tauri_plugin_shell::init())
-                .manage(app_state)
-                .invoke_handler(tauri::generate_handler![
-                    get_config,
-                    save_config,
-                    get_connection_status,
-                    get_profiles,
-                ])
-                .setup(|app| {
-                    // Build system tray
-                    let quit = MenuItem::with_id(app, "quit", "Quit TrackBall Watch", true, None::<&str>)?;
-                    let settings = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
-                    let menu = Menu::with_items(app, &[&settings, &quit])?;
-
-                    TrayIconBuilder::new()
-                        .menu(&menu)
-                        .tooltip("TrackBall Watch — Disconnected")
-                        .on_menu_event(|app, event| match event.id.as_ref() {
-                            "quit" => app.exit(0),
-                            "settings" => {
-                                if let Some(win) = app.get_webview_window("main") {
-                                    let _ = win.show();
-                                    let _ = win.set_focus();
-                                }
-                            }
-                            _ => {}
-                        })
-                        .build(app)?;
-
-                    Ok(())
-                })
-                .run(tauri::generate_context!())
-                .expect("error running tauri");
+    // Spawn UDP server on a dedicated tokio runtime thread.
+    let state_for_udp = app_state.clone();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        rt.block_on(async move {
+            let mut server = UdpServer::new(udp_port);
+            server.on_event(Arc::new(move |event| {
+                handle_input_event(event, &state_for_udp);
+            }));
+            if let Err(e) = server.run().await {
+                log::error!("UDP server: {}", e);
+            }
         });
+    });
+
+    // Run Tauri on the main thread (required on macOS).
+    tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .manage(app_state)
+        .invoke_handler(tauri::generate_handler![
+            get_config,
+            save_config,
+            get_connection_status,
+            get_profiles,
+        ])
+        .setup(|app| {
+            let quit = MenuItem::with_id(app, "quit", "Quit TrackBall Watch", true, None::<&str>)?;
+            let settings_item =
+                MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&settings_item, &quit])?;
+
+            TrayIconBuilder::new()
+                .menu(&menu)
+                .tooltip("TrackBall Watch — Disconnected")
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => app.exit(0),
+                    "settings" => {
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
+                    _ => {}
+                })
+                .build(app)?;
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error running tauri application");
 }
+
+// ── Input event handler ───────────────────────────────────────────────────────
 
 fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>) {
     let injector = match injector::create_injector() {
@@ -159,16 +152,12 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>) {
         InputEvent::Touch(_, payload) => {
             let phase = TouchPhase::try_from(payload.phase).unwrap_or(TouchPhase::Moved);
 
-            match phase {
-                TouchPhase::Ended | TouchPhase::Cancelled => {
-                    s.kalman.reset();
-                    s.trackball.stop();
-                    return;
-                }
-                _ => {}
+            if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+                s.kalman.reset();
+                s.trackball.stop();
+                return;
             }
 
-            // Kalman filter
             let filtered = s.kalman.update(payload.x as f64, payload.y as f64);
             let dx = filtered[0] - s.last_touch_x;
             let dy = filtered[1] - s.last_touch_y;
@@ -176,7 +165,7 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>) {
             s.last_touch_y = filtered[1];
 
             if phase == TouchPhase::Began {
-                return; // skip first frame delta
+                return;
             }
 
             let cfg = s.config.accel;
@@ -185,8 +174,7 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>) {
         }
 
         InputEvent::Gesture(_, payload) => {
-            let gtype = GestureType::try_from(payload.gesture_type).ok();
-            match gtype {
+            match GestureType::try_from(payload.gesture_type).ok() {
                 Some(GestureType::Tap) => {
                     let _ = injector.left_click();
                 }
@@ -197,20 +185,15 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>) {
                 Some(GestureType::LongPress) => {
                     let _ = injector.right_click();
                 }
-                Some(GestureType::Fling) => {
-                    if s.config.mode == InputMode::Trackball {
-                        let vx = payload.param1 as f64;
-                        let vy = payload.param2 as f64;
-                        s.trackball.fling(vx, vy);
-                    }
+                Some(GestureType::Fling) if s.config.mode == InputMode::Trackball => {
+                    s.trackball.fling(payload.param1 as f64, payload.param2 as f64);
                 }
                 _ => {}
             }
         }
 
         InputEvent::Crown(_, payload) => {
-            let lines = payload.delta as f64 / 100.0;
-            let _ = injector.scroll_vertical(lines);
+            let _ = injector.scroll_vertical(payload.delta as f64 / 100.0);
         }
 
         InputEvent::Connected { peer_addr } => {

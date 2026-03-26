@@ -80,16 +80,16 @@ struct TBPPacket {
 private extension Data {
     mutating func appendLE(_ value: UInt16) {
         var v = value.littleEndian
-        append(contentsOf: withUnsafeBytes(of: &v, Array.init))
+        Swift.withUnsafeBytes(of: &v) { append(contentsOf: $0) }
     }
 
     mutating func appendLE(_ value: Int16) {
         var v = value.littleEndian
-        append(contentsOf: withUnsafeBytes(of: &v, Array.init))
+        Swift.withUnsafeBytes(of: &v) { append(contentsOf: $0) }
     }
 
     mutating func appendLE(_ value: UInt32) {
         var v = value.littleEndian
-        append(contentsOf: withUnsafeBytes(of: &v, Array.init))
+        Swift.withUnsafeBytes(of: &v) { append(contentsOf: $0) }
     }
 }

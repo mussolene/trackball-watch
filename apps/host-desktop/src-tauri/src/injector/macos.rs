@@ -1,6 +1,6 @@
 //! macOS input injection via CGEvent.
 //!
-//! Requires Accessibility permission: System Preferences → Privacy & Security
+//! Requires Accessibility permission: System Settings → Privacy & Security
 //! → Accessibility → enable TrackBall Watch.
 
 use crate::injector::platform::{InputInjector, InjectorError};
@@ -8,44 +8,45 @@ use crate::injector::platform::{InputInjector, InjectorError};
 #[cfg(target_os = "macos")]
 mod imp {
     use super::*;
-    
-    
-    
     use std::ffi::c_void;
 
-    // CGEvent types (from CoreGraphics)
     type CGEventRef = *mut c_void;
     type CGEventSourceRef = *mut c_void;
     type CGFloat = f64;
 
     #[repr(C)]
+    #[derive(Clone, Copy)]
     struct CGPoint {
         x: CGFloat,
         y: CGFloat,
     }
 
-    // CGEventType values
+    // CGEventType constants
     const K_CGEVENT_MOUSE_MOVED: u32 = 5;
     const K_CGEVENT_LEFT_MOUSE_DOWN: u32 = 1;
     const K_CGEVENT_LEFT_MOUSE_UP: u32 = 2;
     const K_CGEVENT_RIGHT_MOUSE_DOWN: u32 = 3;
     const K_CGEVENT_RIGHT_MOUSE_UP: u32 = 4;
-    #[allow(dead_code)]
-    const K_CGEVENT_SCROLL_WHEEL: u32 = 22;
 
-    // CGMouseButton values
+    // CGMouseButton constants
     const K_CGMOUSE_BUTTON_LEFT: u32 = 0;
     const K_CGMOUSE_BUTTON_RIGHT: u32 = 1;
 
+    // kCGHIDEventTap = 0
+    const K_CGHIDEVENT_TAP: u32 = 0;
+    // kCGScrollEventUnitLine = 1
+    const K_CGSCROLL_EVENT_UNIT_LINE: u32 = 1;
+
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
+        fn CGEventCreate(source: CGEventSourceRef) -> CGEventRef;
         fn CGEventCreateMouseEvent(
             source: CGEventSourceRef,
             mouse_type: u32,
             mouse_cursor_position: CGPoint,
             mouse_button: u32,
         ) -> CGEventRef;
-        fn CGEventCreateScrollWheelEvent(
+        fn CGEventCreateScrollWheelEvent2(
             source: CGEventSourceRef,
             units: u32,
             wheel_count: u32,
@@ -56,31 +57,22 @@ mod imp {
         fn CGEventPost(tap: u32, event: CGEventRef);
         fn CFRelease(cf: CGEventRef);
         fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
-        fn CGEventCreateSourceWithStateID(state_id: u32) -> CGEventSourceRef;
+    }
+
+    #[link(name = "ApplicationServices", kind = "framework")]
+    extern "C" {
         fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
     }
 
-    // kCGHIDEventTap = 0
-    const K_CGHIDEVENT_TAP: u32 = 0;
-    // kCGScrollEventUnitLine = 1
-    const K_CGSCROLL_EVENT_UNIT_LINE: u32 = 1;
-    // kCGEventSourceStateHIDSystemState = 1
-    const K_CGEVENT_SOURCE_STATE_HIDSYSTEM_STATE: u32 = 1;
-
-    /// Get current mouse position.
+    /// Get current mouse position using a null event.
     fn current_mouse_position() -> (f64, f64) {
         unsafe {
-            let src = CGEventCreateSourceWithStateID(K_CGEVENT_SOURCE_STATE_HIDSYSTEM_STATE);
-            let event =
-                CGEventCreateMouseEvent(src, K_CGEVENT_MOUSE_MOVED, CGPoint { x: 0.0, y: 0.0 }, K_CGMOUSE_BUTTON_LEFT);
+            let event = CGEventCreate(std::ptr::null_mut());
             if event.is_null() {
                 return (0.0, 0.0);
             }
             let pos = CGEventGetLocation(event);
             CFRelease(event);
-            if !src.is_null() {
-                CFRelease(src);
-            }
             (pos.x, pos.y)
         }
     }
@@ -143,11 +135,11 @@ mod imp {
 
         fn scroll_vertical(&self, lines: f64) -> Result<(), InjectorError> {
             unsafe {
-                let event = CGEventCreateScrollWheelEvent(
+                let event = CGEventCreateScrollWheelEvent2(
                     std::ptr::null_mut(),
                     K_CGSCROLL_EVENT_UNIT_LINE,
                     1,
-                    -(lines as i32), // positive lines = down = negative CGEvent delta
+                    -(lines as i32),
                     0,
                     0,
                 );
@@ -166,10 +158,6 @@ pub use imp::MacOSInjector;
 
 #[cfg(test)]
 mod tests {
-    // Integration test: requires running on macOS with Accessibility permission.
-    // Run with: cargo test --target aarch64-apple-darwin injector::macos
-    // These tests are marked ignore to avoid CI failures on Linux.
-
     #[test]
     #[ignore = "requires macOS with Accessibility permission"]
     fn move_cursor_in_circle() {

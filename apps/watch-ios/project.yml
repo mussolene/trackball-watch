@@ -2,8 +2,8 @@ name: TrackBallWatch
 options:
   bundleIdPrefix: com.trackball-watch
   deploymentTarget:
-    watchOS: "10.0"
-    iOS: "16.0"
+    watchOS: "11.0"
+    iOS: "17.0"
   xcodeVersion: "16"
   generateEmptyDirectories: true
 
@@ -17,7 +17,7 @@ targets:
   TrackBallCompanion-iOS:
     type: application
     platform: iOS
-    deploymentTarget: "16.0"
+    deploymentTarget: "17.0"
     sources:
       - path: TrackBallCompanion-iOS
         createIntermediateGroups: true
@@ -28,14 +28,17 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
     dependencies:
       - target: TrackBallWatch-watchOS
+        embed: true
 
   TrackBallWatch-watchOS:
     type: application
     platform: watchOS
-    deploymentTarget: "10.0"
+    deploymentTarget: "11.0"
     sources:
-      - path: TrackBallWatch Watch App
+      - path: "TrackBallWatch Watch App"
         createIntermediateGroups: true
+        excludes:
+          - "Tests/**"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.trackball-watch.app.watchkitapp
@@ -43,15 +46,30 @@ targets:
         TARGETED_DEVICE_FAMILY: "4"
         WK_APPLICATION: YES
 
+  TrackBallWatch-Tests:
+    type: bundle.unit-test
+    platform: watchOS
+    deploymentTarget: "11.0"
+    sources:
+      - path: "TrackBallWatch Watch App/Tests"
+        createIntermediateGroups: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.trackball-watch.app.watchkitapp.tests
+        TARGETED_DEVICE_FAMILY: "4"
+    dependencies:
+      - target: TrackBallWatch-watchOS
+
 schemes:
-  TrackBallWatch-watchOS:
+  TrackBallWatch:
     build:
       targets:
         TrackBallWatch-watchOS: all
+        TrackBallCompanion-iOS: all
     run:
       config: Debug
     test:
       config: Debug
       targets:
-        - name: TrackBallWatch-watchOS
+        - name: TrackBallWatch-Tests
           parallelizable: true
