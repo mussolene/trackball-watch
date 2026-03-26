@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		020EB9D75B16CFC5E45B172F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A0CA93F6B7DEB7BF015F5E8 /* Assets.xcassets */; };
 		188DA5CED0661A729B20623A /* GestureRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5444A250AF2638BCF389E666 /* GestureRecognizer.swift */; };
 		2262CB46F431C3BF6B939C4B /* TrackBallWatch-watchOS.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = CA889BF8D52AD270939911AB /* TrackBallWatch-watchOS.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		64079CFC7DAA710C013568DE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67A8B48E64F160CC1307DD51 /* ContentView.swift */; };
@@ -16,6 +17,7 @@
 		9E4185B458617DC183F6D691 /* CrownHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B326015EEB6A33FBF6794E49 /* CrownHandler.swift */; };
 		BE18174615C19AFB482A2872 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBE4FD3BD97AB29E6706B355 /* App.swift */; };
 		C9AFC1CC3C857D4F81B18CCF /* ExtendedRuntimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DCB3EAEE1A3967EB1B31F68 /* ExtendedRuntimeManager.swift */; };
+		CF54F51A17BF81EA2A4F2E0A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF4C44109FA1418AD625839B /* Assets.xcassets */; };
 		D8ADB10918A47BEF7C423588 /* TBPPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4690BDE05C1A471AE47671C6 /* TBPPacket.swift */; };
 		FDC0719672692591A19A9DAF /* GestureRecognizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA683863B83F6FF01D1ED48 /* GestureRecognizerTests.swift */; };
 /* End PBXBuildFile section */
@@ -52,12 +54,14 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		0A0CA93F6B7DEB7BF015F5E8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		3D9ABBC53853D9B8751E0D20 /* TrackBallCompanion-iOS.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = "TrackBallCompanion-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		44698BA1BE62375FD6BA0697 /* TrackBallWatch-Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "TrackBallWatch-Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4690BDE05C1A471AE47671C6 /* TBPPacket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TBPPacket.swift; sourceTree = "<group>"; };
 		5444A250AF2638BCF389E666 /* GestureRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureRecognizer.swift; sourceTree = "<group>"; };
 		67A8B48E64F160CC1307DD51 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		6DCB3EAEE1A3967EB1B31F68 /* ExtendedRuntimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtendedRuntimeManager.swift; sourceTree = "<group>"; };
+		AF4C44109FA1418AD625839B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B326015EEB6A33FBF6794E49 /* CrownHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrownHandler.swift; sourceTree = "<group>"; };
 		BBA683863B83F6FF01D1ED48 /* GestureRecognizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureRecognizerTests.swift; sourceTree = "<group>"; };
 		BBE4FD3BD97AB29E6706B355 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
@@ -66,6 +70,7 @@
 		D653EECFEBB3888D4482D12F /* TrackBallWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackBallWatchApp.swift; sourceTree = "<group>"; };
 		E68376256C65F4AA75614A21 /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
 		E6E32A6F591E05E763C99D3B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		E7EDD5FEA2E7939EFCFE517D /* Local.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Local.xcconfig; sourceTree = "<group>"; };
 		F6385BB7A9042D1B9351F796 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -83,6 +88,7 @@
 		44404438AD56FD4085991698 /* TrackBallWatch Watch App */ = {
 			isa = PBXGroup;
 			children = (
+				AF4C44109FA1418AD625839B /* Assets.xcassets */,
 				67A8B48E64F160CC1307DD51 /* ContentView.swift */,
 				B326015EEB6A33FBF6794E49 /* CrownHandler.swift */,
 				6DCB3EAEE1A3967EB1B31F68 /* ExtendedRuntimeManager.swift */,
@@ -105,11 +111,21 @@
 			path = Tests;
 			sourceTree = "<group>";
 		};
+		9C41EDEBCC8F5019CC9AA8B5 /* watch-ios */ = {
+			isa = PBXGroup;
+			children = (
+				E7EDD5FEA2E7939EFCFE517D /* Local.xcconfig */,
+			);
+			name = "watch-ios";
+			path = .;
+			sourceTree = "<group>";
+		};
 		AADA176046CB6201830294DB = {
 			isa = PBXGroup;
 			children = (
 				B62A712723CA40D3B7C6D2B6 /* TrackBallCompanion-iOS */,
 				44404438AD56FD4085991698 /* TrackBallWatch Watch App */,
+				9C41EDEBCC8F5019CC9AA8B5 /* watch-ios */,
 				1F5C9CF4F6030CDB921B2B70 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -118,6 +134,7 @@
 			isa = PBXGroup;
 			children = (
 				BBE4FD3BD97AB29E6706B355 /* App.swift */,
+				0A0CA93F6B7DEB7BF015F5E8 /* Assets.xcassets */,
 				F6385BB7A9042D1B9351F796 /* Info.plist */,
 			);
 			path = "TrackBallCompanion-iOS";
@@ -131,6 +148,7 @@
 			buildConfigurationList = 05A40480B85AA511C5849617 /* Build configuration list for PBXNativeTarget "TrackBallWatch-watchOS" */;
 			buildPhases = (
 				6C1227A8EECE83445E24603C /* Sources */,
+				48B5B4051D1FDC4274E17D0B /* Resources */,
 			);
 			buildRules = (
 			);
@@ -148,6 +166,7 @@
 			buildConfigurationList = 17E87A74D179D31EF293A9E2 /* Build configuration list for PBXNativeTarget "TrackBallCompanion-iOS" */;
 			buildPhases = (
 				4C46CA53C0CD33F8EA1F50E3 /* Sources */,
+				F2F18ED0F66830558C66EDB7 /* Resources */,
 				1ECE730DF36A032A1718A387 /* Embed Watch Content */,
 			);
 			buildRules = (
@@ -224,6 +243,25 @@
 		};
 /* End PBXProject section */
 
+/* Begin PBXResourcesBuildPhase section */
+		48B5B4051D1FDC4274E17D0B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				CF54F51A17BF81EA2A4F2E0A /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F2F18ED0F66830558C66EDB7 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				020EB9D75B16CFC5E45B172F /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
 /* Begin PBXSourcesBuildPhase section */
 		4C46CA53C0CD33F8EA1F50E3 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
@@ -274,6 +312,7 @@
 /* Begin XCBuildConfiguration section */
 		0E28EAF6CB2EC5D257064F3D /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E7EDD5FEA2E7939EFCFE517D /* Local.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -414,6 +453,7 @@
 		};
 		B62B420FF662DC63F5A4A508 /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E7EDD5FEA2E7939EFCFE517D /* Local.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
