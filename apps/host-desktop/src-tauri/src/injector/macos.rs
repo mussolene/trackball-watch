@@ -1,1 +1,196 @@
-//! macOS input injection via CGEvent. (Iteration 2)
+//! macOS input injection via CGEvent.
+//!
+//! Requires Accessibility permission: System Preferences → Privacy & Security
+//! → Accessibility → enable TrackBall Watch.
+
+use crate::injector::platform::{InputInjector, InjectorError};
+
+#[cfg(target_os = "macos")]
+mod imp {
+    use super::*;
+    use core_foundation::base::TCFType;
+    use core_foundation::string::CFString;
+    use core_foundation::url::CFURL;
+    use std::ffi::c_void;
+
+    // CGEvent types (from CoreGraphics)
+    type CGEventRef = *mut c_void;
+    type CGEventSourceRef = *mut c_void;
+    type CGFloat = f64;
+
+    #[repr(C)]
+    struct CGPoint {
+        x: CGFloat,
+        y: CGFloat,
+    }
+
+    // CGEventType values
+    const kCGEventMouseMoved: u32 = 5;
+    const kCGEventLeftMouseDown: u32 = 1;
+    const kCGEventLeftMouseUp: u32 = 2;
+    const kCGEventRightMouseDown: u32 = 3;
+    const kCGEventRightMouseUp: u32 = 4;
+    const kCGEventScrollWheel: u32 = 22;
+
+    // CGMouseButton values
+    const kCGMouseButtonLeft: u32 = 0;
+    const kCGMouseButtonRight: u32 = 1;
+
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        fn CGEventCreateMouseEvent(
+            source: CGEventSourceRef,
+            mouse_type: u32,
+            mouse_cursor_position: CGPoint,
+            mouse_button: u32,
+        ) -> CGEventRef;
+        fn CGEventCreateScrollWheelEvent(
+            source: CGEventSourceRef,
+            units: u32,
+            wheel_count: u32,
+            wheel1: i32,
+            wheel2: i32,
+            wheel3: i32,
+        ) -> CGEventRef;
+        fn CGEventPost(tap: u32, event: CGEventRef);
+        fn CFRelease(cf: CGEventRef);
+        fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
+        fn CGEventCreateSourceWithStateID(state_id: u32) -> CGEventSourceRef;
+        fn AXIsProcessTrustedWithOptions(options: *const c_void) -> bool;
+    }
+
+    // kCGHIDEventTap = 0
+    const kCGHIDEventTap: u32 = 0;
+    // kCGScrollEventUnitLine = 1
+    const kCGScrollEventUnitLine: u32 = 1;
+    // kCGEventSourceStateHIDSystemState = 1
+    const kCGEventSourceStateHIDSystemState: u32 = 1;
+
+    /// Get current mouse position.
+    fn current_mouse_position() -> (f64, f64) {
+        unsafe {
+            let src = CGEventCreateSourceWithStateID(kCGEventSourceStateHIDSystemState);
+            let event =
+                CGEventCreateMouseEvent(src, kCGEventMouseMoved, CGPoint { x: 0.0, y: 0.0 }, kCGMouseButtonLeft);
+            if event.is_null() {
+                return (0.0, 0.0);
+            }
+            let pos = CGEventGetLocation(event);
+            CFRelease(event);
+            if !src.is_null() {
+                CFRelease(src);
+            }
+            (pos.x, pos.y)
+        }
+    }
+
+    pub struct MacOSInjector;
+
+    impl MacOSInjector {
+        pub fn new() -> Result<Self, InjectorError> {
+            if !Self::has_accessibility_permission() {
+                return Err(InjectorError::PermissionDenied);
+            }
+            Ok(Self)
+        }
+
+        pub fn has_accessibility_permission() -> bool {
+            unsafe { AXIsProcessTrustedWithOptions(std::ptr::null()) }
+        }
+
+        fn post_mouse_event(&self, event_type: u32, x: f64, y: f64, button: u32) {
+            unsafe {
+                let event = CGEventCreateMouseEvent(
+                    std::ptr::null_mut(),
+                    event_type,
+                    CGPoint { x, y },
+                    button,
+                );
+                if !event.is_null() {
+                    CGEventPost(kCGHIDEventTap, event);
+                    CFRelease(event);
+                }
+            }
+        }
+    }
+
+    impl InputInjector for MacOSInjector {
+        fn move_relative(&self, dx: f64, dy: f64) -> Result<(), InjectorError> {
+            let (cx, cy) = current_mouse_position();
+            self.post_mouse_event(kCGEventMouseMoved, cx + dx, cy + dy, kCGMouseButtonLeft);
+            Ok(())
+        }
+
+        fn move_absolute(&self, x: f64, y: f64) -> Result<(), InjectorError> {
+            self.post_mouse_event(kCGEventMouseMoved, x, y, kCGMouseButtonLeft);
+            Ok(())
+        }
+
+        fn left_click(&self) -> Result<(), InjectorError> {
+            let (x, y) = current_mouse_position();
+            self.post_mouse_event(kCGEventLeftMouseDown, x, y, kCGMouseButtonLeft);
+            self.post_mouse_event(kCGEventLeftMouseUp, x, y, kCGMouseButtonLeft);
+            Ok(())
+        }
+
+        fn right_click(&self) -> Result<(), InjectorError> {
+            let (x, y) = current_mouse_position();
+            self.post_mouse_event(kCGEventRightMouseDown, x, y, kCGMouseButtonRight);
+            self.post_mouse_event(kCGEventRightMouseUp, x, y, kCGMouseButtonRight);
+            Ok(())
+        }
+
+        fn scroll_vertical(&self, lines: f64) -> Result<(), InjectorError> {
+            unsafe {
+                let event = CGEventCreateScrollWheelEvent(
+                    std::ptr::null_mut(),
+                    kCGScrollEventUnitLine,
+                    1,
+                    -(lines as i32), // positive lines = down = negative CGEvent delta
+                    0,
+                    0,
+                );
+                if !event.is_null() {
+                    CGEventPost(kCGHIDEventTap, event);
+                    CFRelease(event);
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub use imp::MacOSInjector;
+
+#[cfg(test)]
+mod tests {
+    // Integration test: requires running on macOS with Accessibility permission.
+    // Run with: cargo test --target aarch64-apple-darwin injector::macos
+    // These tests are marked ignore to avoid CI failures on Linux.
+
+    #[test]
+    #[ignore = "requires macOS with Accessibility permission"]
+    fn move_cursor_in_circle() {
+        #[cfg(target_os = "macos")]
+        {
+            use super::imp::MacOSInjector;
+            use crate::injector::platform::InputInjector;
+            use std::f64::consts::PI;
+
+            let injector = MacOSInjector::new().expect("Accessibility permission required");
+            let steps = 36;
+            let radius = 100.0_f64;
+            let center_x = 500.0_f64;
+            let center_y = 400.0_f64;
+
+            for i in 0..=steps {
+                let angle = 2.0 * PI * (i as f64) / (steps as f64);
+                let x = center_x + radius * angle.cos();
+                let y = center_y + radius * angle.sin();
+                injector.move_absolute(x, y).unwrap();
+                std::thread::sleep(std::time::Duration::from_millis(16));
+            }
+        }
+    }
+}
