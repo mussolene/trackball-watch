@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  rust-check:
+    name: Rust (fmt + clippy + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/host-desktop/src-tauri
+
+      - name: Check formatting
+        working-directory: apps/host-desktop/src-tauri
+        run: cargo fmt --check
+
+      - name: Clippy
+        working-directory: apps/host-desktop/src-tauri
+        run: cargo clippy -- -D warnings
+
+      - name: Tests
+        working-directory: apps/host-desktop/src-tauri
+        run: cargo test --all-features
+
+  swift-check:
+    name: Swift (build + lint)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.app
+
+      - name: Build watchOS app
+        working-directory: apps/watch-ios
+        run: |
+          xcodebuild build \
+            -scheme TrackBallWatch-watchOS \
+            -destination 'platform=watchOS Simulator,name=Apple Watch Series 7 (45mm)' \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+        continue-on-error: true  # project not yet created
+
+      - name: Build iOS companion
+        working-directory: apps/companion-ios
+        run: |
+          xcodebuild build \
+            -scheme TrackBallCompanion \
+            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO
+        continue-on-error: true  # project not yet created
+
+  ci-passes:
+    name: All checks pass
+    runs-on: ubuntu-latest
+    needs: [ rust-check, swift-check ]
+    steps:
+      - run: echo "CI passed"

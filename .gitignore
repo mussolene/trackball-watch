@@ -1,0 +1,65 @@
+# Xcode
+*.xcuserstate
+xcuserdata/
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.xccheckout
+*.moved-aside
+*.pbxuser
+build/
+*.hmap
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Rust
+target/
+# We include Cargo.lock for binaries
+!apps/host-desktop/src-tauri/Cargo.lock
+
+# Tauri
+dist/
+.tauri/
+node_modules/
+.svelte-kit/
+
+# Secrets and certificates
+*.p12
+*.mobileprovision
+*.provisionprofile
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Coverage
+coverage/
+tarpaulin-report.html
+lcov.info
+codecov/
