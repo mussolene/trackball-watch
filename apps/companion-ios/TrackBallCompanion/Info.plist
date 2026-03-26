@@ -22,6 +22,10 @@
     <string>Used to scan QR codes for pairing with desktop host</string>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Used to relay input events to TrackBall Watch desktop app on your local network</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_tbp._udp.</string>
+    </array>
     <key>UIBackgroundModes</key>
     <array>
         <string>voip</string>

@@ -12,7 +12,7 @@ use crate::protocol::packets::{
     decode_crown, decode_gesture, decode_header, decode_touch, packet_type, CrownPayload,
     GesturePayload, PacketHeader, TouchPayload,
 };
-use crate::server::connection::ConnectionManager;
+use crate::server::connection::{ConnectionManager, ConnectionState};
 
 pub const DEFAULT_PORT: u16 = 47474;
 const MAX_PACKET_SIZE: usize = 1500;
@@ -97,10 +97,25 @@ impl UdpServer {
 
         let payload = &data[header_len..];
 
-        // Update heartbeat for the active session
+        // Update heartbeat or implicitly create session on first packet from a new peer
         {
             let mut mgr = self.connection_manager.lock().await;
-            if let Some(ref mut s) = mgr.session {
+            let is_new_peer = mgr
+                .session
+                .as_ref()
+                .map(|s| s.peer_addr != peer)
+                .unwrap_or(true);
+
+            if is_new_peer && header.packet_type != packet_type::HANDSHAKE {
+                // Implicit session: treat any packet from an unknown peer as a connection.
+                // This handles relays (iPhone) that don't send a formal HANDSHAKE.
+                let s = mgr.start_session(peer, "unknown".into(), "Device".into());
+                s.set_connected();
+                drop(mgr);
+                if let Some(ref cb) = self.event_cb {
+                    cb(InputEvent::Connected { peer_addr: peer });
+                }
+            } else if let Some(ref mut s) = mgr.session {
                 if s.peer_addr == peer {
                     s.on_packet_received();
                 }
@@ -125,14 +140,20 @@ impl UdpServer {
             }
             packet_type::HEARTBEAT => InputEvent::Heartbeat(header),
             packet_type::HANDSHAKE => {
-                // Start or update session
                 let mut mgr = self.connection_manager.lock().await;
-                let s = mgr.start_session(peer, "unknown".into(), "Apple Watch".into());
-                s.set_connected();
-                drop(mgr);
-
-                if let Some(ref cb) = self.event_cb {
-                    cb(InputEvent::Connected { peer_addr: peer });
+                // Skip if we already have an active session from this peer (e.g. implicit was created first)
+                let already_connected = mgr
+                    .session
+                    .as_ref()
+                    .map(|s| s.peer_addr == peer && s.state == ConnectionState::Connected)
+                    .unwrap_or(false);
+                if !already_connected {
+                    let s = mgr.start_session(peer, "unknown".into(), "Apple Watch".into());
+                    s.set_connected();
+                    drop(mgr);
+                    if let Some(ref cb) = self.event_cb {
+                        cb(InputEvent::Connected { peer_addr: peer });
+                    }
                 }
                 return Ok(());
             }

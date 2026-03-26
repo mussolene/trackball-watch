@@ -19,6 +19,7 @@ pub struct AppConfig {
     pub kalman_r_noise: f64,
     pub trackball_friction: f64,
     pub udp_port: u16,
+    pub device_id: String,
     pub start_minimized: bool,
     pub start_on_login: bool,
 }
@@ -51,6 +52,7 @@ impl Default for AppConfig {
             kalman_r_noise: 0.5,
             trackball_friction: 0.92,
             udp_port: 47474,
+            device_id: String::new(),
             start_minimized: true,
             start_on_login: false,
         }
@@ -59,13 +61,19 @@ impl Default for AppConfig {
 
 impl AppConfig {
     pub fn load() -> Self {
-        match config_path() {
+        let mut cfg = match config_path() {
             Some(path) if path.exists() => {
                 let data = fs::read_to_string(&path).unwrap_or_default();
                 serde_json::from_str(&data).unwrap_or_default()
             }
             _ => Self::default(),
+        };
+
+        if cfg.device_id.is_empty() {
+            cfg.device_id = generate_device_id();
+            let _ = cfg.save();
         }
+        cfg
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
@@ -77,6 +85,14 @@ impl AppConfig {
         fs::write(path, json)?;
         Ok(())
     }
+}
+
+fn generate_device_id() -> String {
+    use rand::RngCore;
+
+    let mut bytes = [0u8; 16];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 fn config_path() -> Option<PathBuf> {

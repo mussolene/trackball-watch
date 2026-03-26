@@ -18,6 +18,7 @@ final class WatchRelayService: NSObject, ObservableObject {
 
     private var wcSession: WCSession?
     private var udpRelay: UDPRelay?
+    private var heartbeatTimer: Timer?
     private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
     private var pairedDesktop: DesktopConfig?
 
@@ -39,6 +40,8 @@ final class WatchRelayService: NSObject, ObservableObject {
     }
 
     func stop() {
+        heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
         wcSession?.delegate = nil
         udpRelay?.cancel()
         udpRelay = nil
@@ -62,8 +65,17 @@ final class WatchRelayService: NSObject, ObservableObject {
         pairedDesktop = desktop
         DesktopConfig.save(desktop)
 
-        udpRelay = UDPRelay(host: desktop.host, port: desktop.port)
-        udpRelay?.start()
+        udpRelay?.cancel()
+        heartbeatTimer?.invalidate()
+
+        let relay = UDPRelay(host: desktop.host, port: desktop.port)
+        relay.start()
+        udpRelay = relay
+
+        // Send heartbeats every 1s so the desktop session doesn't time out (timeout = 3s)
+        heartbeatTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            self?.udpRelay?.sendHeartbeat()
+        }
     }
 
     func relay(_ data: Data) {

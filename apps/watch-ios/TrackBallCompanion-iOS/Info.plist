@@ -18,6 +18,12 @@
     <string>1</string>
     <key>UILaunchScreen</key>
     <dict/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>Used to discover and relay to TrackBall Watch desktop app on local network</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_tbp._udp.</string>
+    </array>
     <key>UISupportedInterfaceOrientations</key>
     <array>
         <string>UIInterfaceOrientationPortrait</string>
