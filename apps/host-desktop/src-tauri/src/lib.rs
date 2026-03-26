@@ -179,8 +179,7 @@ pub fn run() {
                 &[&show_qr_item, &settings_item, &disconnect_item, &quit],
             )?;
 
-            TrayIconBuilder::new()
-                .id("main-tray")
+            TrayIconBuilder::with_id("main-tray")
                 .menu(&menu)
                 .tooltip("TrackBall Watch — Disconnected")
                 .on_menu_event(|app, event| match event.id.as_ref() {
