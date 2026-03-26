@@ -169,7 +169,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.trackball-watch.app";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.trackball-watch.companion";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
@@ -316,7 +316,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = "com.trackball-watch.app";
+				PRODUCT_BUNDLE_IDENTIFIER = "com.trackball-watch.companion";
 				SDKROOT = iphoneos;
 				TARGETED_DEVICE_FAMILY = 1;
 			};
