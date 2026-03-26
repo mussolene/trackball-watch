@@ -7,15 +7,14 @@ pub mod settings;
 use std::sync::{Arc, Mutex};
 use tauri::{
     Manager,
-    tray::{TrayIconBuilder, TrayIconEvent},
+    tray::TrayIconBuilder,
     menu::{Menu, MenuItem},
 };
 
-use engine::accel::AccelConfig;
 use engine::kalman::{Kalman2D, KalmanConfig};
 use engine::trackball::TrackballState;
-use protocol::packets::{GestureType, TouchPhase, packet_type};
-use server::udp::{InputEvent, UdpServer, DEFAULT_PORT};
+use protocol::packets::{GestureType, TouchPhase};
+use server::udp::{InputEvent, UdpServer};
 use settings::config::{AppConfig, InputMode};
 
 /// Shared application state.
@@ -70,7 +69,7 @@ fn save_config(
 }
 
 #[tauri::command]
-fn get_connection_status(state: tauri::State<Arc<Mutex<AppState>>>) -> String {
+fn get_connection_status(_state: tauri::State<Arc<Mutex<AppState>>>) -> String {
     // Simplified: would query ConnectionManager in real impl
     "disconnected".to_string()
 }

@@ -8,9 +8,9 @@ use crate::injector::platform::{InputInjector, InjectorError};
 #[cfg(target_os = "macos")]
 mod imp {
     use super::*;
-    use core_foundation::base::TCFType;
-    use core_foundation::string::CFString;
-    use core_foundation::url::CFURL;
+    
+    
+    
     use std::ffi::c_void;
 
     // CGEvent types (from CoreGraphics)
@@ -25,16 +25,17 @@ mod imp {
     }
 
     // CGEventType values
-    const kCGEventMouseMoved: u32 = 5;
-    const kCGEventLeftMouseDown: u32 = 1;
-    const kCGEventLeftMouseUp: u32 = 2;
-    const kCGEventRightMouseDown: u32 = 3;
-    const kCGEventRightMouseUp: u32 = 4;
-    const kCGEventScrollWheel: u32 = 22;
+    const K_CGEVENT_MOUSE_MOVED: u32 = 5;
+    const K_CGEVENT_LEFT_MOUSE_DOWN: u32 = 1;
+    const K_CGEVENT_LEFT_MOUSE_UP: u32 = 2;
+    const K_CGEVENT_RIGHT_MOUSE_DOWN: u32 = 3;
+    const K_CGEVENT_RIGHT_MOUSE_UP: u32 = 4;
+    #[allow(dead_code)]
+    const K_CGEVENT_SCROLL_WHEEL: u32 = 22;
 
     // CGMouseButton values
-    const kCGMouseButtonLeft: u32 = 0;
-    const kCGMouseButtonRight: u32 = 1;
+    const K_CGMOUSE_BUTTON_LEFT: u32 = 0;
+    const K_CGMOUSE_BUTTON_RIGHT: u32 = 1;
 
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
@@ -60,18 +61,18 @@ mod imp {
     }
 
     // kCGHIDEventTap = 0
-    const kCGHIDEventTap: u32 = 0;
+    const K_CGHIDEVENT_TAP: u32 = 0;
     // kCGScrollEventUnitLine = 1
-    const kCGScrollEventUnitLine: u32 = 1;
+    const K_CGSCROLL_EVENT_UNIT_LINE: u32 = 1;
     // kCGEventSourceStateHIDSystemState = 1
-    const kCGEventSourceStateHIDSystemState: u32 = 1;
+    const K_CGEVENT_SOURCE_STATE_HIDSYSTEM_STATE: u32 = 1;
 
     /// Get current mouse position.
     fn current_mouse_position() -> (f64, f64) {
         unsafe {
-            let src = CGEventCreateSourceWithStateID(kCGEventSourceStateHIDSystemState);
+            let src = CGEventCreateSourceWithStateID(K_CGEVENT_SOURCE_STATE_HIDSYSTEM_STATE);
             let event =
-                CGEventCreateMouseEvent(src, kCGEventMouseMoved, CGPoint { x: 0.0, y: 0.0 }, kCGMouseButtonLeft);
+                CGEventCreateMouseEvent(src, K_CGEVENT_MOUSE_MOVED, CGPoint { x: 0.0, y: 0.0 }, K_CGMOUSE_BUTTON_LEFT);
             if event.is_null() {
                 return (0.0, 0.0);
             }
@@ -107,7 +108,7 @@ mod imp {
                     button,
                 );
                 if !event.is_null() {
-                    CGEventPost(kCGHIDEventTap, event);
+                    CGEventPost(K_CGHIDEVENT_TAP, event);
                     CFRelease(event);
                 }
             }
@@ -117,26 +118,26 @@ mod imp {
     impl InputInjector for MacOSInjector {
         fn move_relative(&self, dx: f64, dy: f64) -> Result<(), InjectorError> {
             let (cx, cy) = current_mouse_position();
-            self.post_mouse_event(kCGEventMouseMoved, cx + dx, cy + dy, kCGMouseButtonLeft);
+            self.post_mouse_event(K_CGEVENT_MOUSE_MOVED, cx + dx, cy + dy, K_CGMOUSE_BUTTON_LEFT);
             Ok(())
         }
 
         fn move_absolute(&self, x: f64, y: f64) -> Result<(), InjectorError> {
-            self.post_mouse_event(kCGEventMouseMoved, x, y, kCGMouseButtonLeft);
+            self.post_mouse_event(K_CGEVENT_MOUSE_MOVED, x, y, K_CGMOUSE_BUTTON_LEFT);
             Ok(())
         }
 
         fn left_click(&self) -> Result<(), InjectorError> {
             let (x, y) = current_mouse_position();
-            self.post_mouse_event(kCGEventLeftMouseDown, x, y, kCGMouseButtonLeft);
-            self.post_mouse_event(kCGEventLeftMouseUp, x, y, kCGMouseButtonLeft);
+            self.post_mouse_event(K_CGEVENT_LEFT_MOUSE_DOWN, x, y, K_CGMOUSE_BUTTON_LEFT);
+            self.post_mouse_event(K_CGEVENT_LEFT_MOUSE_UP, x, y, K_CGMOUSE_BUTTON_LEFT);
             Ok(())
         }
 
         fn right_click(&self) -> Result<(), InjectorError> {
             let (x, y) = current_mouse_position();
-            self.post_mouse_event(kCGEventRightMouseDown, x, y, kCGMouseButtonRight);
-            self.post_mouse_event(kCGEventRightMouseUp, x, y, kCGMouseButtonRight);
+            self.post_mouse_event(K_CGEVENT_RIGHT_MOUSE_DOWN, x, y, K_CGMOUSE_BUTTON_RIGHT);
+            self.post_mouse_event(K_CGEVENT_RIGHT_MOUSE_UP, x, y, K_CGMOUSE_BUTTON_RIGHT);
             Ok(())
         }
 
@@ -144,14 +145,14 @@ mod imp {
             unsafe {
                 let event = CGEventCreateScrollWheelEvent(
                     std::ptr::null_mut(),
-                    kCGScrollEventUnitLine,
+                    K_CGSCROLL_EVENT_UNIT_LINE,
                     1,
                     -(lines as i32), // positive lines = down = negative CGEvent delta
                     0,
                     0,
                 );
                 if !event.is_null() {
-                    CGEventPost(kCGHIDEventTap, event);
+                    CGEventPost(K_CGHIDEVENT_TAP, event);
                     CFRelease(event);
                 }
             }

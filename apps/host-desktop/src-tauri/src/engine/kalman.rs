@@ -10,10 +10,12 @@
 
 /// 2×2 matrix, row-major.
 #[derive(Debug, Clone, Copy)]
+#[allow(dead_code)]
 struct Mat2 {
     m: [[f64; 2]; 2],
 }
 
+#[allow(dead_code)]
 impl Mat2 {
     fn zero() -> Self {
         Self { m: [[0.0; 2]; 2] }
@@ -201,6 +203,7 @@ impl Default for KalmanConfig {
 /// for fling/inertia use.
 #[derive(Debug, Clone)]
 pub struct Kalman2D {
+    #[allow(dead_code)]
     cfg: KalmanConfig,
     /// State estimate [x, y, vx, vy].
     state: [f64; 4],

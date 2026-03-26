@@ -4,7 +4,6 @@
 //! the cursor continues to move with the given velocity, decelerating
 //! each frame by a friction coefficient until speed drops below threshold.
 
-use crate::engine::accel::AccelConfig;
 
 /// Trackball physics state.
 #[derive(Debug, Clone)]

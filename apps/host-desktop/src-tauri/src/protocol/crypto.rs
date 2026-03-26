@@ -7,7 +7,7 @@
 //! AAD: packet header bytes (8 bytes).
 
 use aes_gcm::{
-    aead::{Aead, AeadCore, KeyInit, OsRng},
+    aead::{Aead, KeyInit, OsRng},
     Aes128Gcm, Key, Nonce,
 };
 use hkdf::Hkdf;

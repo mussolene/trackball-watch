@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
-use crate::engine::accel::{AccelConfig, CurveType};
+use crate::engine::accel::AccelConfig;
 
 /// Full application settings.
 #[derive(Debug, Clone, Serialize, Deserialize)]
