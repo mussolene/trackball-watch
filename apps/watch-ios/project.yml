@@ -14,8 +14,8 @@ configFiles:
 settings:
   base:
     SWIFT_VERSION: "5.9"
-    DEVELOPMENT_TEAM: ""
     CODE_SIGN_STYLE: Automatic
+    # DEVELOPMENT_TEAM comes from Local.xcconfig (not tracked in git)
 
 targets:
   TrackBallCompanion-iOS:

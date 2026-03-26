@@ -4,13 +4,12 @@ export PATH := $(HOME)/.cargo/bin:$(PATH)
 DESKTOP   := apps/host-desktop
 TAURI_DIR := $(DESKTOP)/src-tauri
 WATCH_DIR := apps/watch-ios
-COMP_DIR  := apps/companion-ios
 TOOL_DIR  := tools/latency-tester
 
 XCODE_FLAGS := CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 
-.PHONY: all install build build-desktop build-ios build-watch build-companion build-tools \
-        dev test test-rust test-swift lint fmt check clean help
+.PHONY: all install build build-desktop build-ios build-watch build-tools install-ios \
+        dev test test-rust test-swift lint fmt check xcodegen clean help
 
 # ── Main targets ──────────────────────────────────────────────────────────────
 
@@ -27,12 +26,12 @@ install: ## Install npm dependencies
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 
-build: build-desktop build-ios build-watch build-companion build-tools ## Build all targets
+build: build-desktop build-ios build-watch build-tools ## Build all targets
 
 build-desktop: install ## Build desktop host (Tauri release)
 	cd $(DESKTOP) && npm run tauri build
 
-build-ios: ## Build iOS companion (unified project, debug)
+build-ios: ## Build iOS companion + embedded Watch app (debug)
 	xcodebuild build \
 		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
 		-scheme TrackBallWatch \
@@ -40,7 +39,7 @@ build-ios: ## Build iOS companion (unified project, debug)
 		-configuration Debug \
 		$(XCODE_FLAGS)
 
-build-watch: ## Build watchOS app (debug)
+build-watch: ## Build watchOS app standalone (debug)
 	xcodebuild build \
 		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
 		-scheme TrackBallWatch-watchOS \
@@ -48,16 +47,22 @@ build-watch: ## Build watchOS app (debug)
 		-configuration Debug \
 		$(XCODE_FLAGS)
 
-build-companion: ## Build standalone companion (debug)
-	xcodebuild build \
-		-project $(COMP_DIR)/TrackBallCompanion.xcodeproj \
-		-scheme TrackBallCompanion \
-		-destination 'generic/platform=iOS' \
-		-configuration Debug \
-		$(XCODE_FLAGS)
-
 build-tools: ## Build latency-tester
 	cd $(TOOL_DIR) && cargo build --release
+
+install-ios: ## Build & install iOS+Watch app on connected device (requires signed identity)
+	xcodebuild build \
+		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
+		-scheme TrackBallWatch \
+		-destination 'generic/platform=iOS' \
+		-configuration Debug \
+		-allowProvisioningUpdates \
+		-allowProvisioningDeviceRegistration
+	@IPHONE_ID=$$(xcrun devicectl list devices 2>/dev/null | awk '/iPhone/{print $$3}' | head -1); \
+	APP=$$(find ~/Library/Developer/Xcode/DerivedData/TrackBallWatch-*/Build/Products/Debug-iphoneos \
+		-maxdepth 1 -name "TrackBallCompanion-iOS.app" 2>/dev/null | head -1); \
+	echo "Installing $$APP on $$IPHONE_ID"; \
+	xcrun devicectl device install app --device "$$IPHONE_ID" "$$APP"
 
 # ── Dev ───────────────────────────────────────────────────────────────────────
 
@@ -93,9 +98,8 @@ check: ## Quick compilation check (no link)
 
 # ── XcodeGen ──────────────────────────────────────────────────────────────────
 
-xcodegen: ## Regenerate Xcode projects from project.yml
+xcodegen: ## Regenerate Xcode project from project.yml
 	cd $(WATCH_DIR) && xcodegen generate
-	cd $(COMP_DIR) && xcodegen generate
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
@@ -104,4 +108,3 @@ clean: ## Remove build artifacts
 	cd $(TOOL_DIR) && cargo clean
 	rm -rf $(DESKTOP)/dist $(DESKTOP)/node_modules
 	xcodebuild clean -project $(WATCH_DIR)/TrackBallWatch.xcodeproj -alltargets 2>/dev/null || true
-	xcodebuild clean -project $(COMP_DIR)/TrackBallCompanion.xcodeproj -alltargets 2>/dev/null || true

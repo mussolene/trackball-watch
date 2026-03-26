@@ -10,15 +10,21 @@
 		020EB9D75B16CFC5E45B172F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A0CA93F6B7DEB7BF015F5E8 /* Assets.xcassets */; };
 		188DA5CED0661A729B20623A /* GestureRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5444A250AF2638BCF389E666 /* GestureRecognizer.swift */; };
 		2262CB46F431C3BF6B939C4B /* TrackBallWatch-watchOS.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = CA889BF8D52AD270939911AB /* TrackBallWatch-watchOS.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		2F8EC7400A2AFF381E63340F /* BonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0A0B2CC74688B06B2EF3AC /* BonjourBrowser.swift */; };
+		5799F9B6C471BA23750B635D /* TrackBallCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC4AEEAC62E6D8C1F5460193 /* TrackBallCompanionApp.swift */; };
+		62439ABC39492A84DBF64A50 /* WatchRelayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C2CA0A4FFFB8ED2776BFAE2 /* WatchRelayService.swift */; };
 		64079CFC7DAA710C013568DE /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67A8B48E64F160CC1307DD51 /* ContentView.swift */; };
 		6730A283776A064E09EF3B28 /* TrackBallWatchApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D653EECFEBB3888D4482D12F /* TrackBallWatchApp.swift */; };
+		67ECD0F82066EC4009DD0387 /* UDPRelay.swift in Sources */ = {isa = PBXBuildFile; fileRef = 13E0FACA0F09632816FFF1E4 /* UDPRelay.swift */; };
+		84980EFE8932026057B96170 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB6A78D32086A9E98710B38B /* AppDelegate.swift */; };
 		85FB0044E70EA13A8140C5A3 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E68376256C65F4AA75614A21 /* WatchSessionManager.swift */; };
 		8AA2EA37ABE2E6AA125B4040 /* InputCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0E1A73E7F41E6EEDA04E8A /* InputCaptureView.swift */; };
+		909AB776ACC5AB09CC1B54AC /* PairingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C486C920ED1977F7C4EFF6ED /* PairingService.swift */; };
 		9E4185B458617DC183F6D691 /* CrownHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B326015EEB6A33FBF6794E49 /* CrownHandler.swift */; };
-		BE18174615C19AFB482A2872 /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBE4FD3BD97AB29E6706B355 /* App.swift */; };
 		C9AFC1CC3C857D4F81B18CCF /* ExtendedRuntimeManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DCB3EAEE1A3967EB1B31F68 /* ExtendedRuntimeManager.swift */; };
 		CF54F51A17BF81EA2A4F2E0A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF4C44109FA1418AD625839B /* Assets.xcassets */; };
 		D8ADB10918A47BEF7C423588 /* TBPPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4690BDE05C1A471AE47671C6 /* TBPPacket.swift */; };
+		E935EE6D8457B9DF6587A458 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CD57AEEDFD5CAE7A8DCC574 /* MainView.swift */; };
 		FDC0719672692591A19A9DAF /* GestureRecognizerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBA683863B83F6FF01D1ED48 /* GestureRecognizerTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -55,17 +61,23 @@
 
 /* Begin PBXFileReference section */
 		0A0CA93F6B7DEB7BF015F5E8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		13E0FACA0F09632816FFF1E4 /* UDPRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UDPRelay.swift; sourceTree = "<group>"; };
+		3C2CA0A4FFFB8ED2776BFAE2 /* WatchRelayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRelayService.swift; sourceTree = "<group>"; };
 		3D9ABBC53853D9B8751E0D20 /* TrackBallCompanion-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "TrackBallCompanion-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		44698BA1BE62375FD6BA0697 /* TrackBallWatch-Tests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "TrackBallWatch-Tests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		4690BDE05C1A471AE47671C6 /* TBPPacket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TBPPacket.swift; sourceTree = "<group>"; };
 		5444A250AF2638BCF389E666 /* GestureRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureRecognizer.swift; sourceTree = "<group>"; };
 		67A8B48E64F160CC1307DD51 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		6DCB3EAEE1A3967EB1B31F68 /* ExtendedRuntimeManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtendedRuntimeManager.swift; sourceTree = "<group>"; };
+		8CD57AEEDFD5CAE7A8DCC574 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		AC0A0B2CC74688B06B2EF3AC /* BonjourBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourBrowser.swift; sourceTree = "<group>"; };
+		AC4AEEAC62E6D8C1F5460193 /* TrackBallCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackBallCompanionApp.swift; sourceTree = "<group>"; };
 		AF4C44109FA1418AD625839B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B326015EEB6A33FBF6794E49 /* CrownHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrownHandler.swift; sourceTree = "<group>"; };
+		BB6A78D32086A9E98710B38B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		BBA683863B83F6FF01D1ED48 /* GestureRecognizerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureRecognizerTests.swift; sourceTree = "<group>"; };
-		BBE4FD3BD97AB29E6706B355 /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		BC0E1A73E7F41E6EEDA04E8A /* InputCaptureView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InputCaptureView.swift; sourceTree = "<group>"; };
+		C486C920ED1977F7C4EFF6ED /* PairingService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PairingService.swift; sourceTree = "<group>"; };
 		CA889BF8D52AD270939911AB /* TrackBallWatch-watchOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "TrackBallWatch-watchOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D653EECFEBB3888D4482D12F /* TrackBallWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackBallWatchApp.swift; sourceTree = "<group>"; };
 		E68376256C65F4AA75614A21 /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
@@ -133,9 +145,15 @@
 		B62A712723CA40D3B7C6D2B6 /* TrackBallCompanion-iOS */ = {
 			isa = PBXGroup;
 			children = (
-				BBE4FD3BD97AB29E6706B355 /* App.swift */,
+				BB6A78D32086A9E98710B38B /* AppDelegate.swift */,
 				0A0CA93F6B7DEB7BF015F5E8 /* Assets.xcassets */,
+				AC0A0B2CC74688B06B2EF3AC /* BonjourBrowser.swift */,
 				F6385BB7A9042D1B9351F796 /* Info.plist */,
+				8CD57AEEDFD5CAE7A8DCC574 /* MainView.swift */,
+				C486C920ED1977F7C4EFF6ED /* PairingService.swift */,
+				AC4AEEAC62E6D8C1F5460193 /* TrackBallCompanionApp.swift */,
+				13E0FACA0F09632816FFF1E4 /* UDPRelay.swift */,
+				3C2CA0A4FFFB8ED2776BFAE2 /* WatchRelayService.swift */,
 			);
 			path = "TrackBallCompanion-iOS";
 			sourceTree = "<group>";
@@ -206,16 +224,18 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2630;
+				LastUpgradeCheck = 1600;
 				TargetAttributes = {
 					2363C40FD4BE54CBFE708750 = {
+						DevelopmentTeam = 325NXJLVZ6;
 						ProvisioningStyle = Automatic;
 					};
 					610D79C56E5FAFC28C47A38D = {
+						DevelopmentTeam = 325NXJLVZ6;
 						ProvisioningStyle = Automatic;
 					};
 					FBBAA34B14D2AF7D6E849CE6 = {
-						DevelopmentTeam = "";
+						DevelopmentTeam = 325NXJLVZ6;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -265,7 +285,13 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BE18174615C19AFB482A2872 /* App.swift in Sources */,
+				84980EFE8932026057B96170 /* AppDelegate.swift in Sources */,
+				2F8EC7400A2AFF381E63340F /* BonjourBrowser.swift in Sources */,
+				E935EE6D8457B9DF6587A458 /* MainView.swift in Sources */,
+				909AB776ACC5AB09CC1B54AC /* PairingService.swift in Sources */,
+				5799F9B6C471BA23750B635D /* TrackBallCompanionApp.swift in Sources */,
+				67ECD0F82066EC4009DD0387 /* UDPRelay.swift in Sources */,
+				62439ABC39492A84DBF64A50 /* WatchRelayService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -344,12 +370,10 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = D4X4TDMU64;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -362,7 +386,6 @@
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.9;
@@ -374,7 +397,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				DEVELOPMENT_TEAM = D4X4TDMU64;
 				INFOPLIST_FILE = "TrackBallWatch Watch App/Info.plist";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.trackball-watch.app.watchkitapp";
 				SDKROOT = watchos;
@@ -391,7 +413,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = D4X4TDMU64;
 				INFOPLIST_FILE = "TrackBallCompanion-iOS/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -409,7 +430,6 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
-				DEVELOPMENT_TEAM = D4X4TDMU64;
 				INFOPLIST_FILE = "TrackBallCompanion-iOS/Info.plist";
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -426,7 +446,6 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				DEVELOPMENT_TEAM = D4X4TDMU64;
 				INFOPLIST_FILE = "TrackBallWatch Watch App/Info.plist";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.trackball-watch.app.watchkitapp";
 				SDKROOT = watchos;
@@ -492,12 +511,10 @@
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				CODE_SIGN_STYLE = Automatic;
 				COPY_PHASE_STRIP = NO;
-				DEAD_CODE_STRIPPING = YES;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = D4X4TDMU64;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -517,7 +534,6 @@
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.9;
