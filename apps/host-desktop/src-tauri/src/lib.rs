@@ -10,8 +10,7 @@ use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    Emitter,
-    Manager,
+    Emitter, Manager,
 };
 
 use engine::kalman::{Kalman2D, KalmanConfig};
@@ -82,8 +81,11 @@ fn get_config(state: tauri::State<Arc<Mutex<AppState>>>) -> AppConfig {
 #[tauri::command]
 fn save_config(config: AppConfig, state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(), String> {
     config.save().map_err(|e| e.to_string())?;
-    let mut pending_mode_push: Option<(tokio::sync::mpsc::UnboundedSender<Vec<u8>>, InputMode, Hand)> =
-        None;
+    let mut pending_mode_push: Option<(
+        tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+        InputMode,
+        Hand,
+    )> = None;
     {
         let mut s = state.lock().unwrap();
         s.kalman = Kalman2D::new(KalmanConfig {
@@ -249,8 +251,7 @@ pub fn run() {
             }
 
             // ── Tray ──────────────────────────────────────────────────────────
-            let quit =
-                MenuItem::with_id(app, "quit", "Quit TrackBall Watch", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "Quit TrackBall Watch", true, None::<&str>)?;
             let settings_item =
                 MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
             let show_qr_item =
@@ -302,6 +303,7 @@ pub fn run() {
                 .build(app)?;
 
             // ── UDP server ────────────────────────────────────────────────────
+            let state_for_coast = app_state_udp.clone();
             let state_for_thread = app_state_udp;
             let handle_for_thread = app_handle;
 
@@ -311,6 +313,10 @@ pub fn run() {
                     .enable_all()
                     .build()
                     .expect("tokio runtime");
+                std::thread::spawn(move || loop {
+                    std::thread::sleep(std::time::Duration::from_millis(16));
+                    trackball_coast_step(&state_for_coast);
+                });
                 rt.block_on(async move {
                     let _mdns = if let Ok(mut mdns) = server::mdns::MdnsAdvertiser::new() {
                         let mdns_hosts: Vec<(String, String)> = lan_bindings
@@ -349,9 +355,7 @@ fn update_tray(app: &tauri::AppHandle, connected: bool, peer_addr: Option<&str>)
         let tooltip = if connected {
             format!(
                 "TrackBall Watch — Connected{}",
-                peer_addr
-                    .map(|a| format!(" ({})", a))
-                    .unwrap_or_default()
+                peer_addr.map(|a| format!(" ({})", a)).unwrap_or_default()
             )
         } else {
             "TrackBall Watch — Disconnected".to_string()
@@ -432,13 +436,33 @@ fn pairing_pin(host: &str, port: u16) -> String {
     format!("{:06}", value % 1_000_000)
 }
 
+/// Advance trackball inertia at ~60 Hz when coasting (FLING already set velocity).
+fn trackball_coast_step(state: &Arc<Mutex<AppState>>) {
+    let mut s = match state.lock() {
+        Ok(g) => g,
+        Err(_) => return,
+    };
+    if s.config.mode != InputMode::Trackball || !s.trackball.coasting {
+        return;
+    }
+    let (dx, dy) = s.trackball.tick();
+    if dx == 0.0 && dy == 0.0 {
+        return;
+    }
+    let user_scale = s.config.sensitivity.max(0.05);
+    let cfg = s.config.accel;
+    drop(s);
+    let injector = match injector::create_injector() {
+        Ok(i) => i,
+        Err(_) => return,
+    };
+    let (sx, sy) = engine::accel::apply_curve_2d(dx * user_scale, dy * user_scale, &cfg);
+    let _ = injector.move_relative(sx, sy);
+}
+
 // ── Input event handler ───────────────────────────────────────────────────────
 
-fn handle_input_event(
-    event: InputEvent,
-    state: &Arc<Mutex<AppState>>,
-    app: &tauri::AppHandle,
-) {
+fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tauri::AppHandle) {
     match event {
         InputEvent::Connected { peer_addr } => {
             log::info!("Device connected: {}", peer_addr);
@@ -463,7 +487,9 @@ fn handle_input_event(
             // Ensure watch mode reflects current desktop mode right after link-up.
             let mode_push = {
                 let s = state.lock().unwrap();
-                s.udp_tx.clone().map(|tx| (tx, s.config.mode, s.config.hand))
+                s.udp_tx
+                    .clone()
+                    .map(|tx| (tx, s.config.mode, s.config.hand))
             };
             if let Some((tx, mode, hand)) = mode_push {
                 let _ = send_mode_packet(&tx, mode, hand);
@@ -517,6 +543,7 @@ fn handle_input_event(
             let y = payload.y as f64;
 
             if phase == TouchPhase::Began {
+                s.trackball.stop();
                 let _ = s.kalman.update(x, y);
                 s.last_raw_x = x;
                 s.last_raw_y = y;

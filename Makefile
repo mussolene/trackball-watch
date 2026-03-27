@@ -30,7 +30,7 @@ install: ## Install npm dependencies
 build: build-desktop build-ios build-watch build-tools ## Build all targets
 
 build-desktop: install ## Build desktop host (Tauri release)
-	cd $(DESKTOP) && npm run tauri build
+	cd $(DESKTOP) && CI=false npm run tauri build
 
 build-ios: ## Build iOS companion + embedded Watch app (debug)
 	xcodebuild build \

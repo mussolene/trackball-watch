@@ -63,12 +63,7 @@ impl MdnsAdvertiser {
                 ])
                 .spawn()?;
             self.children.push(child);
-            log::info!(
-                "mDNS: advertising {} on {}:{}",
-                service_name,
-                host,
-                port
-            );
+            log::info!("mDNS: advertising {} on {}:{}", service_name, host, port);
         }
         Ok(())
     }

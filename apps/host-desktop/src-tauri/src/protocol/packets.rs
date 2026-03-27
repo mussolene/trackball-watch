@@ -178,7 +178,11 @@ pub enum ConfigMode {
 impl TryFrom<u8> for ConfigMode {
     type Error = u8;
     fn try_from(v: u8) -> Result<Self, Self::Error> {
-        match v { 0 => Ok(Self::Trackpad), 1 => Ok(Self::Trackball), other => Err(other) }
+        match v {
+            0 => Ok(Self::Trackpad),
+            1 => Ok(Self::Trackball),
+            other => Err(other),
+        }
     }
 }
 

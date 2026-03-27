@@ -81,17 +81,16 @@ struct InputCaptureView: View {
         // Feed to gesture recognizer
         gestureRecognizer.onTouch(x: normX, y: normY, phase: phase)
 
-        // Send raw touch for trackpad mode
-        if sessionManager.mode == .trackpad || phase == .began || phase == .ended {
-            let packet = TBPPacket.touch(
-                touchId: 0,
-                phase: phase,
-                x: clampToInt16(normX),
-                y: clampToInt16(normY),
-                pressure: 0
-            )
-            sessionManager.send(packet)
-        }
+        // Stream every touch phase to the host so the cursor moves in both trackpad and trackball
+        // modes (desktop CONFIG may switch the watch to trackball; skipping .moved broke dragging).
+        let packet = TBPPacket.touch(
+            touchId: 0,
+            phase: phase,
+            x: clampToInt16(normX),
+            y: clampToInt16(normY),
+            pressure: 0
+        )
+        sessionManager.send(packet)
 
         if phase != .moved {
             let generator = WKHapticType.click
