@@ -216,6 +216,13 @@ pub fn run() {
             )?;
 
             TrayIconBuilder::with_id("main-tray")
+                .icon(app.default_window_icon().cloned().unwrap_or_else(|| {
+                    tauri::image::Image::from_path(
+                        app.path().resource_dir().unwrap().join("icons/tray-icon.png")
+                    ).expect("tray icon")
+                }))
+                .icon_as_template(true)
+                .menu_on_left_click(true)
                 .menu(&menu)
                 .tooltip("TrackBall Watch — Disconnected")
                 .on_menu_event(|app, event| match event.id.as_ref() {
