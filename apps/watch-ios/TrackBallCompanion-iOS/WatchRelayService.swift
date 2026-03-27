@@ -14,10 +14,19 @@ private let log = Logger(subsystem: "com.trackball-watch.app", category: "WatchR
 ///   Apple Watch → WCSession.sendMessage → WatchRelayService → UDP → Desktop
 @MainActor
 final class WatchRelayService: NSObject, ObservableObject {
+    enum DesktopLinkState: Equatable {
+        case idle
+        case connecting
+        case connected
+        case waiting(String)
+        case failed(String)
+    }
+
     static let shared = WatchRelayService()
 
     @Published var isRunning = false
     @Published var packetsRelayed: Int = 0
+    @Published var desktopLinkState: DesktopLinkState = .idle
 
     private var wcSession: WCSession?
     private var udpRelay: UDPRelay?
@@ -39,6 +48,8 @@ final class WatchRelayService: NSObject, ObservableObject {
         activateWCSession()
         if let desktop = pairedDesktop {
             connectUDP(to: desktop)
+        } else {
+            desktopLinkState = .idle
         }
         isRunning = true
     }
@@ -50,6 +61,7 @@ final class WatchRelayService: NSObject, ObservableObject {
         udpRelay?.cancel()
         udpRelay = nil
         isRunning = false
+        desktopLinkState = .idle
         endBackgroundTask()
     }
 
@@ -74,8 +86,23 @@ final class WatchRelayService: NSObject, ObservableObject {
         heartbeatTimer?.invalidate()
 
         let relay = UDPRelay(host: desktop.host, port: desktop.port)
-        relay.onConfigPacket = { [weak self] modeByte in
-            self?.pushModeToWatch(modeByte)
+        relay.onConfigPacket = { [weak self] modeByte, handByte in
+            self?.pushModeToWatch(modeByte, handByte: handByte)
+        }
+        relay.onStateChanged = { [weak self] state in
+            guard let self else { return }
+            switch state {
+            case .connecting:
+                self.desktopLinkState = .connecting
+            case .ready:
+                self.desktopLinkState = .connected
+            case .waiting(let msg):
+                self.desktopLinkState = .waiting(msg)
+            case .failed(let msg):
+                self.desktopLinkState = .failed(msg)
+            case .cancelled:
+                self.desktopLinkState = .idle
+            }
         }
         relay.start()
         udpRelay = relay
@@ -94,13 +121,27 @@ final class WatchRelayService: NSObject, ObservableObject {
         }
     }
 
+    private func switchDesktop(step: Int) {
+        let all = PairingService.shared.connections
+        guard !all.isEmpty else { return }
+
+        let currentId = PairingService.shared.activeId
+        let currentIndex = all.firstIndex { $0.deviceId == currentId } ?? 0
+        let nextIndex = (currentIndex + step + all.count) % all.count
+        PairingService.shared.activate(all[nextIndex])
+    }
+
     /// Push mode change from desktop down to the Watch via WCSession.
-    func pushModeToWatch(_ modeByte: UInt8) {
+    func pushModeToWatch(_ modeByte: UInt8, handByte: UInt8? = nil) {
         guard let session = wcSession,
               session.activationState == .activated,
               session.isReachable else { return }
         let modeString = modeByte == 1 ? "trackball" : "trackpad"
-        session.sendMessage(["mode": modeString], replyHandler: nil) { _ in
+        var payload: [String: Any] = ["mode": modeString]
+        if let handByte {
+            payload["hand"] = handByte == 1 ? "left" : "right"
+        }
+        session.sendMessage(payload, replyHandler: nil) { _ in
             // Non-critical — ignore errors
         }
     }
@@ -143,6 +184,19 @@ extension WatchRelayService: WCSessionDelegate {
 
     /// Real-time message from watch (primary path, < 5ms when active).
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        if let command = message["cmd"] as? String {
+            Task { @MainActor in
+                switch command {
+                case "next_host":
+                    self.switchDesktop(step: 1)
+                case "prev_host":
+                    self.switchDesktop(step: -1)
+                default:
+                    break
+                }
+            }
+            return
+        }
         guard let data = message["d"] as? Data else { return }
         Task { @MainActor in
             self.relay(data)

@@ -64,7 +64,7 @@ struct TBPPacket {
 
     /// Serialize the full packet with header.
     func serialize(seq: UInt16) -> Data {
-        let timestampUs = UInt32(Date().timeIntervalSince1970 * 1_000_000) & 0xFFFFFFFF
+        let timestampUs = Self.timestampUsLower32()
         var data = Data(capacity: 8 + payload.count)
         data.appendLE(seq)
         data.append(type.rawValue)
@@ -72,6 +72,21 @@ struct TBPPacket {
         data.appendLE(timestampUs)
         data.append(payload)
         return data
+    }
+
+    /// Lower 32 bits of µs since 1970-01-01 (TBP header).
+    /// Avoids `UInt64(Double)` trap: only convert to integer after finite + Int64 range checks.
+    private static func timestampUsLower32() -> UInt32 {
+        let secs = Date().timeIntervalSince1970
+        guard secs.isFinite, secs >= 0 else { return 0 }
+        guard secs <= Double(Int64.max) / 1_000_000.0 else {
+            return UInt32(truncatingIfNeeded: UInt64.max)
+        }
+        let microsDouble = secs * 1_000_000.0
+        guard microsDouble.isFinite, microsDouble >= 0, microsDouble <= Double(Int64.max) else { return 0 }
+        let micros = Int64(microsDouble)
+        guard micros >= 0 else { return 0 }
+        return UInt32(truncatingIfNeeded: UInt64(micros))
     }
 }
 

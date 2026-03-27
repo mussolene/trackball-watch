@@ -1,5 +1,6 @@
 import SwiftUI
 import WatchKit
+import Combine
 
 /// Virtual trackball for trackball mode.
 /// Displays a red 3D-looking sphere; drag to spin and fling it.
@@ -7,74 +8,125 @@ struct TrackballView: View {
     @EnvironmentObject var sessionManager: WatchSessionManager
 
     @State private var dragStart: CGPoint = .zero
+    @State private var dragStartTime: Date = .distantPast
     @State private var isDragging = false
     // Accumulated rotation offset for visual feedback
     @State private var rotX: Double = 0
     @State private var rotY: Double = 0
+    @State private var angularVX: Double = 0
+    @State private var angularVY: Double = 0
+    @State private var lastDragPoint: CGPoint = .zero
+    @State private var lastTick: Date = .now
+    @State private var lastTapAt: Date = .distantPast
+    private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
+    /// Angular damping per second when coasting (matches desktop trackball decay feel).
+    private let frictionPerSecond: Double = 0.12
 
     var body: some View {
         GeometryReader { geo in
+            let ballDiameter = min(geo.size.width, geo.size.height) * 0.56
             ZStack {
-                // Ball
-                Circle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                Color(red: 1.0, green: 0.3, blue: 0.2),
-                                Color(red: 0.6, green: 0.05, blue: 0.0)
-                            ],
-                            center: UnitPoint(x: 0.35, y: 0.3),
-                            startRadius: 0,
-                            endRadius: geo.size.width * 0.5
-                        )
-                    )
-                    .overlay(
-                        // Specular highlight
-                        Ellipse()
-                            .fill(Color.white.opacity(0.25))
-                            .frame(width: geo.size.width * 0.35, height: geo.size.width * 0.18)
-                            .offset(x: -geo.size.width * 0.12, y: -geo.size.width * 0.18)
-                    )
-                    .shadow(color: .black.opacity(0.5), radius: 6, x: 3, y: 4)
-                    .rotation3DEffect(.degrees(rotX), axis: (x: 1, y: 0, z: 0))
-                    .rotation3DEffect(.degrees(rotY), axis: (x: 0, y: 1, z: 0))
-                    .animation(isDragging ? nil : .easeOut(duration: 0.4), value: rotX)
-                    .animation(isDragging ? nil : .easeOut(duration: 0.4), value: rotY)
+                Color.clear
+
+                KineticTrackballSphere(
+                    diameter: ballDiameter,
+                    rotX: rotX,
+                    rotY: rotY,
+                    isDragging: isDragging
+                )
+                    .animation(isDragging ? nil : .easeOut(duration: 0.35), value: rotX)
+                    .animation(isDragging ? nil : .easeOut(duration: 0.35), value: rotY)
+                    .frame(width: ballDiameter, height: ballDiameter)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     .padding(8)
-            }
-            .gesture(
-                DragGesture(minimumDistance: 2, coordinateSpace: .local)
+                    .contentShape(Circle())
+                    .accessibilityLabel("Trackball")
+                    .gesture(
+                        DragGesture(minimumDistance: 0, coordinateSpace: .local)
                     .onChanged { value in
                         if !isDragging {
                             isDragging = true
                             dragStart = value.location
-                            sendTouchBegan(value.location, in: geo.size)
+                            dragStartTime = .now
+                            lastDragPoint = value.location
+                            angularVX = 0
+                            angularVY = 0
+                            sendTouchBegan(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
+                            WKInterfaceDevice.current().play(.start)
                         } else {
-                            let dx = value.location.x - value.startLocation.x
-                            let dy = value.location.y - value.startLocation.y
-                            rotY = dx * 0.5
-                            rotX = -dy * 0.5
-                            sendTouchMoved(value.location, in: geo.size)
+                            let dx = value.location.x - lastDragPoint.x
+                            let dy = value.location.y - lastDragPoint.y
+                            lastDragPoint = value.location
+                            rotY += dx * 0.9
+                            rotX += -dy * 0.9
+                            angularVY = Double(dx) * 20.0
+                            angularVX = Double(-dy) * 20.0
+                            sendTouchMoved(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
                         }
                     }
                     .onEnded { value in
-                        isDragging = false
+                        defer { isDragging = false }
+                        let dragDist = hypot(
+                            value.location.x - dragStart.x,
+                            value.location.y - dragStart.y
+                        )
+                        let dragDuration = Date().timeIntervalSince(dragStartTime)
+                        if dragDist < 8 && dragDuration < 0.28 {
+                            handleTap()
+                            sendTouchEnded(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
+                            return
+                        }
                         // Fling: send velocity as fling gesture
                         let vx = value.predictedEndLocation.x - value.location.x
                         let vy = value.predictedEndLocation.y - value.location.y
                         sendFling(vx: vx, vy: vy, in: geo.size)
-                        sendTouchEnded(value.location, in: geo.size)
-                        WKInterfaceDevice.current().play(.click)
+                        sendTouchEnded(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
+                        angularVY += Double(vx) * 3.0
+                        angularVX += Double(-vy) * 3.0
+                        WKInterfaceDevice.current().play(.directionUp)
                     }
             )
+            .onReceive(tick) { now in
+                let dt = max(0.0, min(0.05, now.timeIntervalSince(lastTick)))
+                lastTick = now
+                guard !isDragging else { return }
+                guard angularVX != 0 || angularVY != 0 else { return }
+
+                rotX += angularVX * dt
+                rotY += angularVY * dt
+
+                let damping = pow(frictionPerSecond, dt)
+                angularVX *= damping
+                angularVY *= damping
+
+                if abs(angularVX) < 0.4 { angularVX = 0 }
+                if abs(angularVY) < 0.4 { angularVY = 0 }
+            }
+            }
         }
+    }
+
+    private func handleTap() {
+        let now = Date()
+        if now.timeIntervalSince(lastTapAt) < 0.32 {
+            sessionManager.send(TBPPacket.gesture(type: .doubleTap, fingers: 1, param1: 0, param2: 0))
+            WKInterfaceDevice.current().play(.success)
+            lastTapAt = .distantPast
+            return
+        }
+        lastTapAt = now
+        sessionManager.send(TBPPacket.gesture(type: .tap, fingers: 1, param1: 0, param2: 0))
+        WKInterfaceDevice.current().play(.click)
     }
 
     // MARK: - Packet helpers
 
     private func normalize(_ v: CGFloat, size: CGFloat) -> Int16 {
+        guard size > 0, v.isFinite else { return 0 }
         let t = (v / size) * 2.0 - 1.0
-        return Int16(max(-32767, min(32767, t * 32767)))
+        let scaled = t * 32767.0
+        let d = max(min(Double(scaled), Double(Int16.max)), Double(Int16.min))
+        return Int16(clamping: Int(d.rounded()))
     }
 
     private func sendTouchBegan(_ pt: CGPoint, in size: CGSize) {
@@ -102,8 +154,11 @@ struct TrackballView: View {
     }
 
     private func sendFling(vx: CGFloat, vy: CGFloat, in size: CGSize) {
-        let normVx = Int16(max(-32767, min(32767, vx / size.width * 32767 * 2)))
-        let normVy = Int16(max(-32767, min(32767, vy / size.height * 32767 * 2)))
+        guard size.width > 0, size.height > 0 else { return }
+        let nx = Double(vx / size.width * 32767 * 2)
+        let ny = Double(vy / size.height * 32767 * 2)
+        let normVx = Int16(clamping: Int(max(min(nx, Double(Int16.max)), Double(Int16.min)).rounded()))
+        let normVy = Int16(clamping: Int(max(min(ny, Double(Int16.max)), Double(Int16.min)).rounded()))
         let p = TBPPacket.gesture(type: .fling, fingers: 1, param1: normVx, param2: normVy)
         sessionManager.send(p)
     }

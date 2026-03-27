@@ -9,6 +9,7 @@ TOOL_DIR  := tools/latency-tester
 XCODE_FLAGS := CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 
 .PHONY: all install build build-desktop build-ios build-watch build-tools install-ios \
+        install-mobile install-mobile-clean \
         dev test test-rust test-swift lint fmt check xcodegen clean help
 
 # ── Main targets ──────────────────────────────────────────────────────────────
@@ -64,6 +65,16 @@ install-ios: ## Build & install iOS+Watch app on connected device (requires sign
 		-maxdepth 1 -name "TrackBallCompanion-iOS.app" 2>/dev/null | head -1); \
 	echo "Installing $$APP on $$IPHONE_ID"; \
 	xcrun devicectl device install app --device "$$IPHONE_ID" "$$APP"
+
+# iPhone + paired Apple Watch: one build, install .app on phone then watch bundle on watch.
+#   make install-mobile              — incremental build + install both devices
+#   make install-mobile CLEAN=1      — xcodebuild clean, then build + install
+#   make install-mobile-clean        — same as CLEAN=1
+install-mobile: ## Build & install on iPhone + paired Watch (CLEAN=1 for clean build first)
+	CLEAN=$(or $(CLEAN),0) bash "$(CURDIR)/tools/install_mobile_devices.sh"
+
+install-mobile-clean: ## Xcode clean, then build & install iPhone + Watch
+	$(MAKE) install-mobile CLEAN=1
 
 # ── Dev ───────────────────────────────────────────────────────────────────────
 

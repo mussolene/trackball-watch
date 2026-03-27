@@ -2,6 +2,7 @@ import Foundation
 import Network
 import Combine
 import OSLog
+import Darwin
 
 private let log = Logger(subsystem: "com.trackball-watch.app", category: "BonjourBrowser")
 
@@ -24,7 +25,7 @@ final class BonjourBrowser: ObservableObject {
     @Published var isSearching = false
 
     private var browser: NWBrowser?
-    private var resolvers: [String: NWConnection] = [:]
+    private var resolvers: [String: ServiceResolver] = [:]
     private let queue = DispatchQueue(label: "com.trackball.bonjour", qos: .userInitiated)
 
     func start() {
@@ -58,7 +59,7 @@ final class BonjourBrowser: ObservableObject {
     func stop() {
         browser?.cancel()
         browser = nil
-        resolvers.values.forEach { $0.cancel() }
+        resolvers.values.forEach { $0.stop() }
         resolvers.removeAll()
         isSearching = false
         discovered.removeAll()
@@ -69,39 +70,24 @@ final class BonjourBrowser: ObservableObject {
     private func handleResults(_ results: Set<NWBrowser.Result>) {
         log.info("Handling \(results.count, privacy: .public) Bonjour results")
         for result in results {
-            guard case .service(let name, _, _, _) = result.endpoint else { continue }
+            guard case .service(let name, let type, let domain, _) = result.endpoint else { continue }
             log.info("Found service: \(name, privacy: .public)")
-
-            // Resolve host+port via NWConnection
-            let conn = NWConnection(to: result.endpoint, using: .udp)
-            resolvers[name]?.cancel()
-            resolvers[name] = conn
-
-            conn.stateUpdateHandler = { [weak self] state in
-                log.info("Resolver state for \(name, privacy: .public): \(String(describing: state), privacy: .public)")
-                if case .ready = state {
-                    if let path = conn.currentPath,
-                       let endpoint = path.remoteEndpoint,
-                       case .hostPort(let host, let port) = endpoint {
-                        let hostStr = "\(host)"
-                        let portVal = port.rawValue
-                        log.info("Resolved \(name, privacy: .public) → \(hostStr, privacy: .public):\(portVal, privacy: .public)")
-                        let desktop = DiscoveredDesktop(
-                            id: name,
-                            name: name,
-                            host: hostStr,
-                            port: portVal
-                        )
-                        Task { @MainActor [weak self] in
-                            self?.upsert(desktop)
-                        }
-                    } else {
-                        log.warning("Resolved \(name, privacy: .public) but no hostPort endpoint in path")
-                    }
-                    conn.cancel()
+            let metadataHost = Self.hostFromBonjourMetadata(result.metadata)
+            let resolver = ServiceResolver(name: name, type: type, domain: domain) { [weak self] desktop in
+                let preferredHost = Self.preferredHost(metadataHost: metadataHost, resolvedHost: desktop.host)
+                let merged = DiscoveredDesktop(
+                    id: desktop.id,
+                    name: desktop.name,
+                    host: preferredHost,
+                    port: desktop.port
+                )
+                Task { @MainActor [weak self] in
+                    self?.upsert(merged)
                 }
             }
-            conn.start(queue: self.queue)
+            resolvers[name]?.stop()
+            resolvers[name] = resolver
+            resolver.start()
         }
 
         // Remove desktops no longer visible
@@ -109,14 +95,193 @@ final class BonjourBrowser: ObservableObject {
             if case .service(let name, _, _, _) = result.endpoint { return name }
             return nil
         })
+        resolvers = resolvers.filter { activeNames.contains($0.key) }
         discovered.removeAll { !activeNames.contains($0.id) }
     }
 
     private func upsert(_ desktop: DiscoveredDesktop) {
+        if let sameEndpointIdx = discovered.firstIndex(where: {
+            $0.host == desktop.host && $0.port == desktop.port && $0.id != desktop.id
+        }) {
+            // De-duplicate duplicate mDNS advertisements of the same host:port
+            // that differ only by service instance name/interface suffix.
+            if desktop.name.count < discovered[sameEndpointIdx].name.count {
+                discovered[sameEndpointIdx] = DiscoveredDesktop(
+                    id: discovered[sameEndpointIdx].id,
+                    name: desktop.name,
+                    host: desktop.host,
+                    port: desktop.port
+                )
+            }
+            return
+        }
         if let idx = discovered.firstIndex(where: { $0.id == desktop.id }) {
             discovered[idx] = desktop
         } else {
             discovered.append(desktop)
+        }
+    }
+
+    private static func preferredHost(metadataHost: String?, resolvedHost: String) -> String {
+        if let metadataHost, let ipv4 = lanIPv4(from: metadataHost) {
+            return ipv4
+        }
+        if let ipv4 = lanIPv4(from: resolvedHost) {
+            return ipv4
+        }
+        return resolvedHost
+    }
+
+    private static func hostFromBonjourMetadata(_ metadata: NWBrowser.Result.Metadata) -> String? {
+        guard case let .bonjour(txtRecord) = metadata else { return nil }
+        guard let host = txtRecord["host"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !host.isEmpty else {
+            return nil
+        }
+        return host
+    }
+
+    private static func isRoutableHost(_ host: String) -> Bool {
+        let h = host.lowercased()
+        if h.hasPrefix("169.254.") || h.hasPrefix("127.") || h == "0.0.0.0" { return false }
+        if h.hasPrefix("fe80:") || h == "::1" || h.contains("%") { return false }
+        // Keep discovery within LAN/Wi-Fi segments for stable relay.
+        if let v4 = ipv4Octets(h) {
+            let isPrivate =
+                v4.0 == 10 ||
+                (v4.0 == 172 && (16...31).contains(v4.1)) ||
+                (v4.0 == 192 && v4.1 == 168)
+            if !isPrivate { return false }
+        }
+        return true
+    }
+
+    private static func lanIPv4(from host: String) -> String? {
+        if let v4 = ipv4Octets(host) {
+            let isPrivate =
+                v4.0 == 10 ||
+                (v4.0 == 172 && (16...31).contains(v4.1)) ||
+                (v4.0 == 192 && v4.1 == 168)
+            if isPrivate { return host }
+            return nil
+        }
+        return resolveHostnameToLanIPv4(host)
+    }
+
+    private static func resolveHostnameToLanIPv4(_ hostname: String) -> String? {
+        var hints = addrinfo(
+            ai_flags: AI_ADDRCONFIG,
+            ai_family: AF_INET,
+            ai_socktype: SOCK_DGRAM,
+            ai_protocol: IPPROTO_UDP,
+            ai_addrlen: 0,
+            ai_canonname: nil,
+            ai_addr: nil,
+            ai_next: nil
+        )
+        var res: UnsafeMutablePointer<addrinfo>?
+        let rc = getaddrinfo(hostname, nil, &hints, &res)
+        guard rc == 0, let first = res else { return nil }
+        defer { freeaddrinfo(first) }
+
+        var ptr: UnsafeMutablePointer<addrinfo>? = first
+        while let ai = ptr {
+            if ai.pointee.ai_family == AF_INET,
+               let sa = ai.pointee.ai_addr {
+                var sin = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+                var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                if inet_ntop(AF_INET, &sin.sin_addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil {
+                    let ip = String(cString: buf)
+                    if lanIPv4(from: ip) != nil { return ip }
+                }
+            }
+            ptr = ai.pointee.ai_next
+        }
+        return nil
+    }
+
+    private static func ipv4Octets(_ host: String) -> (Int, Int, Int, Int)? {
+        let parts = host.split(separator: ".")
+        guard parts.count == 4 else { return nil }
+        let nums = parts.compactMap { Int($0) }
+        guard nums.count == 4, nums.allSatisfy({ (0...255).contains($0) }) else { return nil }
+        return (nums[0], nums[1], nums[2], nums[3])
+    }
+
+    private final class ServiceResolver: NSObject, NetServiceDelegate {
+        private let service: NetService
+        private let onResolved: (DiscoveredDesktop) -> Void
+
+        init(name: String, type: String, domain: String, onResolved: @escaping (DiscoveredDesktop) -> Void) {
+            self.service = NetService(domain: domain, type: type, name: name)
+            self.onResolved = onResolved
+            super.init()
+            self.service.delegate = self
+        }
+
+        func start() {
+            service.resolve(withTimeout: 5)
+        }
+
+        func stop() {
+            service.stop()
+        }
+
+        func netServiceDidResolveAddress(_ sender: NetService) {
+            let port = UInt16(sender.port)
+            let txtHost = Self.txtHost(from: sender)
+            let ipv4Host = sender.addresses?
+                .compactMap(Self.ipv4Address)
+                .first(where: { Self.isRoutableIPv4($0) })
+            let hostName = sender.hostName?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            guard let host = [txtHost, ipv4Host, hostName].compactMap({ $0 }).first,
+                  !host.isEmpty else {
+                log.warning("NetService resolved without usable host for \(sender.name, privacy: .public)")
+                sender.stop()
+                return
+            }
+
+            log.info("NetService resolved \(sender.name, privacy: .public) → \(host, privacy: .public):\(port, privacy: .public)")
+            onResolved(DiscoveredDesktop(id: sender.name, name: sender.name, host: host, port: port))
+            sender.stop()
+        }
+
+        func netService(_ sender: NetService, didNotResolve errorDict: [String : NSNumber]) {
+            log.warning("NetService resolve failed for \(sender.name, privacy: .public): \(errorDict, privacy: .public)")
+        }
+
+        private static func txtHost(from service: NetService) -> String? {
+            guard let txtRecord = service.txtRecordData() else { return nil }
+            let txt = NetService.dictionary(fromTXTRecord: txtRecord)
+            guard let hostData = txt["host"],
+                  let host = String(data: hostData, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines),
+                  !host.isEmpty else {
+                return nil
+            }
+            return host
+        }
+
+        private static func ipv4Address(from addressData: Data) -> String? {
+            addressData.withUnsafeBytes { rawBuffer in
+                guard let base = rawBuffer.baseAddress else { return nil }
+                let sockaddrPtr = base.assumingMemoryBound(to: sockaddr.self)
+                guard sockaddrPtr.pointee.sa_family == sa_family_t(AF_INET) else { return nil }
+
+                var addr = base.assumingMemoryBound(to: sockaddr_in.self).pointee.sin_addr
+                var hostBuffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                guard inet_ntop(AF_INET, &addr, &hostBuffer, socklen_t(INET_ADDRSTRLEN)) != nil else {
+                    return nil
+                }
+                return String(cString: hostBuffer)
+            }
+        }
+
+        private static func isRoutableIPv4(_ host: String) -> Bool {
+            // Reject link-local and loopback addresses for relay destination.
+            !(host.hasPrefix("169.254.") || host.hasPrefix("127."))
         }
     }
 }

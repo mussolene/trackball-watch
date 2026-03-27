@@ -1,12 +1,21 @@
 import Foundation
 import Network
 import OSLog
+import Darwin
 
 private let log = Logger(subsystem: "com.trackball-watch.app", category: "UDPRelay")
 
 /// UDP client that sends TBP packets to the desktop host.
 /// Also receives inbound CONFIG packets from desktop to sync mode changes.
 final class UDPRelay {
+    enum RelayState: Equatable {
+        case connecting
+        case ready
+        case waiting(String)
+        case failed(String)
+        case cancelled
+    }
+
     private let host: String
     private let port: UInt16
     private var connection: NWConnection?
@@ -14,7 +23,10 @@ final class UDPRelay {
     private var seq: UInt16 = 0
 
     /// Called on main thread when a CONFIG packet (type 0x12) is received.
-    var onConfigPacket: ((UInt8) -> Void)?
+    /// Payload: mode byte + optional hand byte.
+    var onConfigPacket: ((UInt8, UInt8?) -> Void)?
+    /// Called on main thread when UDP relay state changes.
+    var onStateChanged: ((RelayState) -> Void)?
 
     init(host: String, port: UInt16) {
         self.host = host
@@ -22,25 +34,33 @@ final class UDPRelay {
     }
 
     func start() {
+        let resolvedHost = Self.resolveRoutableHost(host) ?? host
         let endpoint = NWEndpoint.hostPort(
-            host: NWEndpoint.Host(host),
+            host: NWEndpoint.Host(resolvedHost),
             port: NWEndpoint.Port(rawValue: port)!
         )
         let params = NWParameters.udp
         params.allowLocalEndpointReuse = true
         let conn = NWConnection(to: endpoint, using: params)
-        let hostCopy = host, portCopy = port
-        log.info("Connecting UDP to \(hostCopy, privacy: .public):\(portCopy, privacy: .public)")
+        let hostCopy = resolvedHost, portCopy = port
+        log.info("Connecting UDP to \(hostCopy, privacy: .public):\(portCopy, privacy: .public) (configured: \(self.host, privacy: .public))")
         conn.stateUpdateHandler = { [weak self] state in
             switch state {
+            case .setup, .preparing:
+                DispatchQueue.main.async { self?.onStateChanged?(.connecting) }
             case .ready:
                 log.info("UDP ready → \(hostCopy, privacy: .public):\(portCopy, privacy: .public)")
+                DispatchQueue.main.async { self?.onStateChanged?(.ready) }
                 self?.sendHandshake()
                 self?.receiveLoop()
             case .failed(let error):
                 log.error("UDP failed: \(error, privacy: .public)")
+                DispatchQueue.main.async { self?.onStateChanged?(.failed(error.localizedDescription)) }
             case .waiting(let error):
                 log.warning("UDP waiting: \(error, privacy: .public)")
+                DispatchQueue.main.async { self?.onStateChanged?(.waiting(error.localizedDescription)) }
+            case .cancelled:
+                DispatchQueue.main.async { self?.onStateChanged?(.cancelled) }
             default:
                 log.debug("UDP state: \(String(describing: state), privacy: .public)")
             }
@@ -56,7 +76,8 @@ final class UDPRelay {
                 let packetType = data[2]
                 if packetType == 0x12 { // CONFIG
                     let modeByte = data[8]
-                    DispatchQueue.main.async { self?.onConfigPacket?(modeByte) }
+                    let handByte: UInt8? = data.count >= 10 ? data[9] : nil
+                    DispatchQueue.main.async { self?.onConfigPacket?(modeByte, handByte) }
                 }
             }
             if error == nil { self?.receiveLoop() } // continue receiving
@@ -74,6 +95,7 @@ final class UDPRelay {
     func cancel() {
         connection?.cancel()
         connection = nil
+        DispatchQueue.main.async { self.onStateChanged?(.cancelled) }
     }
 
     // MARK: - TBP control packets
@@ -95,7 +117,7 @@ final class UDPRelay {
 
     private func buildPacket(type packetType: UInt8, payload: Data) -> Data {
         seq &+= 1
-        let timestampUs = UInt32(truncatingIfNeeded: UInt64(Date().timeIntervalSince1970 * 1_000_000))
+        let timestampUs = Self.timestampUsLower32()
         var data = Data(capacity: 8 + payload.count)
         data.appendLE(seq)
         data.append(packetType)
@@ -103,6 +125,86 @@ final class UDPRelay {
         data.appendLE(timestampUs)
         data.append(payload)
         return data
+    }
+
+    private static func timestampUsLower32() -> UInt32 {
+        let secs = Date().timeIntervalSince1970
+        guard secs.isFinite, secs >= 0 else { return 0 }
+        guard secs <= Double(Int64.max) / 1_000_000.0 else {
+            return UInt32(truncatingIfNeeded: UInt64.max)
+        }
+        let microsDouble = secs * 1_000_000.0
+        guard microsDouble.isFinite, microsDouble >= 0, microsDouble <= Double(Int64.max) else { return 0 }
+        let micros = Int64(microsDouble)
+        guard micros >= 0 else { return 0 }
+        return UInt32(truncatingIfNeeded: UInt64(micros))
+    }
+
+    /// Resolve hostname and prefer routable LAN addresses over link-local.
+    private static func resolveRoutableHost(_ input: String) -> String? {
+        // Already a numeric host: keep if not link-local.
+        if isRoutableIPv4(input) || isRoutableIPv6(input) {
+            return input
+        }
+
+        var hints = addrinfo(
+            ai_flags: AI_ADDRCONFIG,
+            ai_family: AF_UNSPEC,
+            ai_socktype: SOCK_DGRAM,
+            ai_protocol: IPPROTO_UDP,
+            ai_addrlen: 0,
+            ai_canonname: nil,
+            ai_addr: nil,
+            ai_next: nil
+        )
+        var res: UnsafeMutablePointer<addrinfo>?
+        let rc = getaddrinfo(input, nil, &hints, &res)
+        guard rc == 0, let first = res else { return nil }
+        defer { freeaddrinfo(first) }
+
+        var bestIPv4: String?
+        var bestIPv6: String?
+        var ptr: UnsafeMutablePointer<addrinfo>? = first
+        while let ai = ptr {
+            if ai.pointee.ai_family == AF_INET,
+               let ip = ipv4String(from: ai.pointee.ai_addr),
+               isRoutableIPv4(ip) {
+                bestIPv4 = ip
+                break
+            } else if ai.pointee.ai_family == AF_INET6,
+                      let ip = ipv6String(from: ai.pointee.ai_addr),
+                      isRoutableIPv6(ip),
+                      bestIPv6 == nil {
+                bestIPv6 = ip
+            }
+            ptr = ai.pointee.ai_next
+        }
+        return bestIPv4 ?? bestIPv6
+    }
+
+    private static func ipv4String(from addr: UnsafeMutablePointer<sockaddr>?) -> String? {
+        guard let addr else { return nil }
+        var copy = addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+        var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+        guard inet_ntop(AF_INET, &copy.sin_addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil else { return nil }
+        return String(cString: buf)
+    }
+
+    private static func ipv6String(from addr: UnsafeMutablePointer<sockaddr>?) -> String? {
+        guard let addr else { return nil }
+        var copy = addr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
+        var buf = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+        guard inet_ntop(AF_INET6, &copy.sin6_addr, &buf, socklen_t(INET6_ADDRSTRLEN)) != nil else { return nil }
+        return String(cString: buf)
+    }
+
+    private static func isRoutableIPv4(_ host: String) -> Bool {
+        !(host.hasPrefix("169.254.") || host.hasPrefix("127.") || host == "0.0.0.0")
+    }
+
+    private static func isRoutableIPv6(_ host: String) -> Bool {
+        let h = host.lowercased()
+        return !(h.hasPrefix("fe80:") || h == "::1")
     }
 }
 

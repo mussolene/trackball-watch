@@ -233,41 +233,124 @@ impl Packet {
 
 // ── Codec ─────────────────────────────────────────────────────────────────────
 
-use bincode::config::standard;
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PacketCodecError {
+    TooShort { expected: usize, actual: usize },
+}
 
-/// Encode a `PacketHeader` to bytes.
-pub fn encode_header(header: &PacketHeader) -> Result<Vec<u8>, bincode::error::EncodeError> {
-    bincode::encode_to_vec(header, standard())
+/// Encode a `PacketHeader` to fixed 8-byte little-endian bytes.
+pub fn encode_header(header: &PacketHeader) -> Result<Vec<u8>, PacketCodecError> {
+    let mut out = Vec::with_capacity(8);
+    out.extend_from_slice(&header.seq.to_le_bytes());
+    out.push(header.packet_type);
+    out.push(header.flags);
+    out.extend_from_slice(&header.timestamp_us.to_le_bytes());
+    Ok(out)
 }
 
 /// Decode a `PacketHeader` from the first 8 bytes of a buffer.
-pub fn decode_header(buf: &[u8]) -> Result<(PacketHeader, usize), bincode::error::DecodeError> {
-    bincode::decode_from_slice(buf, standard())
+pub fn decode_header(buf: &[u8]) -> Result<(PacketHeader, usize), PacketCodecError> {
+    if buf.len() < 8 {
+        return Err(PacketCodecError::TooShort {
+            expected: 8,
+            actual: buf.len(),
+        });
+    }
+    let seq = u16::from_le_bytes([buf[0], buf[1]]);
+    let packet_type = buf[2];
+    let flags = buf[3];
+    let timestamp_us = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+    Ok((
+        PacketHeader {
+            seq,
+            packet_type,
+            flags,
+            timestamp_us,
+        },
+        8,
+    ))
 }
 
-/// Encode a `TouchPayload` to bytes.
-pub fn encode_touch(payload: &TouchPayload) -> Result<Vec<u8>, bincode::error::EncodeError> {
-    bincode::encode_to_vec(payload, standard())
+/// Encode a `TouchPayload` to fixed 8-byte little-endian bytes.
+pub fn encode_touch(payload: &TouchPayload) -> Result<Vec<u8>, PacketCodecError> {
+    let mut out = Vec::with_capacity(8);
+    out.push(payload.touch_id);
+    out.push(payload.phase);
+    out.extend_from_slice(&payload.x.to_le_bytes());
+    out.extend_from_slice(&payload.y.to_le_bytes());
+    out.push(payload.pressure);
+    out.push(payload._pad);
+    Ok(out)
 }
 
-pub fn decode_touch(buf: &[u8]) -> Result<(TouchPayload, usize), bincode::error::DecodeError> {
-    bincode::decode_from_slice(buf, standard())
+pub fn decode_touch(buf: &[u8]) -> Result<(TouchPayload, usize), PacketCodecError> {
+    if buf.len() < 8 {
+        return Err(PacketCodecError::TooShort {
+            expected: 8,
+            actual: buf.len(),
+        });
+    }
+    Ok((
+        TouchPayload {
+            touch_id: buf[0],
+            phase: buf[1],
+            x: i16::from_le_bytes([buf[2], buf[3]]),
+            y: i16::from_le_bytes([buf[4], buf[5]]),
+            pressure: buf[6],
+            _pad: buf[7],
+        },
+        8,
+    ))
 }
 
-pub fn encode_gesture(payload: &GesturePayload) -> Result<Vec<u8>, bincode::error::EncodeError> {
-    bincode::encode_to_vec(payload, standard())
+pub fn encode_gesture(payload: &GesturePayload) -> Result<Vec<u8>, PacketCodecError> {
+    let mut out = Vec::with_capacity(6);
+    out.push(payload.gesture_type);
+    out.push(payload.fingers);
+    out.extend_from_slice(&payload.param1.to_le_bytes());
+    out.extend_from_slice(&payload.param2.to_le_bytes());
+    Ok(out)
 }
 
-pub fn decode_gesture(buf: &[u8]) -> Result<(GesturePayload, usize), bincode::error::DecodeError> {
-    bincode::decode_from_slice(buf, standard())
+pub fn decode_gesture(buf: &[u8]) -> Result<(GesturePayload, usize), PacketCodecError> {
+    if buf.len() < 6 {
+        return Err(PacketCodecError::TooShort {
+            expected: 6,
+            actual: buf.len(),
+        });
+    }
+    Ok((
+        GesturePayload {
+            gesture_type: buf[0],
+            fingers: buf[1],
+            param1: i16::from_le_bytes([buf[2], buf[3]]),
+            param2: i16::from_le_bytes([buf[4], buf[5]]),
+        },
+        6,
+    ))
 }
 
-pub fn encode_crown(payload: &CrownPayload) -> Result<Vec<u8>, bincode::error::EncodeError> {
-    bincode::encode_to_vec(payload, standard())
+pub fn encode_crown(payload: &CrownPayload) -> Result<Vec<u8>, PacketCodecError> {
+    let mut out = Vec::with_capacity(4);
+    out.extend_from_slice(&payload.delta.to_le_bytes());
+    out.extend_from_slice(&payload.velocity.to_le_bytes());
+    Ok(out)
 }
 
-pub fn decode_crown(buf: &[u8]) -> Result<(CrownPayload, usize), bincode::error::DecodeError> {
-    bincode::decode_from_slice(buf, standard())
+pub fn decode_crown(buf: &[u8]) -> Result<(CrownPayload, usize), PacketCodecError> {
+    if buf.len() < 4 {
+        return Err(PacketCodecError::TooShort {
+            expected: 4,
+            actual: buf.len(),
+        });
+    }
+    Ok((
+        CrownPayload {
+            delta: i16::from_le_bytes([buf[0], buf[1]]),
+            velocity: i16::from_le_bytes([buf[2], buf[3]]),
+        },
+        4,
+    ))
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

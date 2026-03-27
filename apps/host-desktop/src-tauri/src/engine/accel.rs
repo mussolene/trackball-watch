@@ -17,6 +17,7 @@ pub enum CurveType {
 
 /// Parameters for acceleration curves.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
 pub struct AccelConfig {
     pub curve: CurveType,
     /// Overall sensitivity multiplier (0.1 – 5.0, default 1.0).

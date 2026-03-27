@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn session_not_connected_until_set() {
         let mut mgr = ConnectionManager::new();
-        let s = mgr.start_session(test_addr(), "dev1".into(), "Watch".into());
+        let _s = mgr.start_session(test_addr(), "dev1".into(), "Watch".into());
         assert!(mgr.active_session().is_none()); // still handshaking
 
         if let Some(ref mut s) = mgr.session {

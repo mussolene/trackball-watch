@@ -14,9 +14,13 @@ final class WatchSessionManager: NSObject, ObservableObject {
     enum InputMode {
         case trackpad, trackball
     }
+    enum Handedness {
+        case right, left
+    }
 
     @Published var connectionState: ConnectionState = .disconnected
     @Published var mode: InputMode = .trackpad
+    @Published var hand: Handedness = .right
 
     private var wcSession: WCSession?
     private var sequenceNumber: UInt16 = 0
@@ -57,20 +61,24 @@ final class WatchSessionManager: NSObject, ObservableObject {
     // MARK: - Packet sending
 
     /// Send a TBP packet via WatchConnectivity.
-    /// Uses sendMessage for realtime delivery, falls back to transferUserInfo.
+    /// Uses sendMessage for realtime delivery when reachable, otherwise queue via transferUserInfo.
     func send(_ packet: TBPPacket) {
         guard let session = wcSession,
-              session.activationState == .activated,
-              session.isReachable else {
+              session.activationState == .activated else {
             return
         }
 
         sequenceNumber &+= 1
         let data = packet.serialize(seq: sequenceNumber)
 
-        session.sendMessage(["d": data as Any], replyHandler: nil) { [weak self] error in
-            // Fallback: transferUserInfo (slower, queued)
-            self?.wcSession?.transferUserInfo(["d": data])
+        if session.isReachable {
+            session.sendMessage(["d": data as Any], replyHandler: nil) { [weak self] _ in
+                // Fallback when realtime path fails.
+                self?.wcSession?.transferUserInfo(["d": data])
+            }
+        } else {
+            // Companion is not foreground/reachable right now; queue delivery.
+            session.transferUserInfo(["d": data])
         }
     }
 
@@ -91,7 +99,7 @@ extension WatchSessionManager: WCSessionDelegate {
         error: Error?
     ) {
         Task { @MainActor in
-            if let error {
+            if error != nil {
                 self.connectionState = .disconnected
                 return
             }
@@ -107,9 +115,13 @@ extension WatchSessionManager: WCSessionDelegate {
 
     /// Receive mode push from iPhone (originated from desktop CONFIG packet).
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        guard let modeStr = message["mode"] as? String else { return }
         Task { @MainActor in
-            self.mode = modeStr == "trackball" ? .trackball : .trackpad
+            if let modeStr = message["mode"] as? String {
+                self.mode = modeStr == "trackball" ? .trackball : .trackpad
+            }
+            if let handStr = message["hand"] as? String {
+                self.hand = handStr == "left" ? .left : .right
+            }
         }
     }
 }

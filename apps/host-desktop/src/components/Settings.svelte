@@ -169,6 +169,12 @@
     color: white;
     border-color: #007aff;
   }
+  :global(html[data-theme="dark"]) .button-group button.active {
+    background: #0a84ff;
+    color: #ffffff;
+    border-color: #5ac8fa;
+    box-shadow: 0 0 0 1px rgba(90, 200, 250, 0.35);
+  }
 
   input[type="range"] {
     width: 100%;

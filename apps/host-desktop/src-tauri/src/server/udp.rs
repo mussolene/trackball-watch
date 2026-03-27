@@ -192,7 +192,7 @@ impl UdpServer {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use tokio::time::{timeout, Duration};
+    use tokio::time::Duration;
 
     #[tokio::test]
     async fn server_binds_and_receives() {
@@ -209,11 +209,8 @@ mod tests {
             }
         }));
 
-        // Run server in background
-        let server = Arc::new(server);
-        let server2 = server.clone();
         tokio::spawn(async move {
-            let _ = server2.run().await;
+            let _ = server.run().await;
         });
 
         // Give server time to bind

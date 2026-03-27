@@ -12,10 +12,13 @@ final class GestureRecognizer: ObservableObject {
     // MARK: - Configuration
 
     private let tapMaxDuration: TimeInterval = 0.3
-    private let tapMaxMovement: CGFloat = 500.0       // in normalized coords
+    /// Max finger displacement for a tap, in TBP normalized coords (-32767…32767 per axis).
+    /// One screen width maps to ~65534 units (~437 units per point at ~150pt), so 500 was ~1px — taps always became swipe/fling.
+    private let tapMaxMovement: CGFloat = 12_000.0
     private let doubleTapWindow: TimeInterval = 0.4
     private let longPressMinDuration: TimeInterval = 0.8
-    private let flingMinSpeed: CGFloat = 200.0        // normalized units/sec
+    /// Avoid classifying a tap release as fling when velocity spikes briefly.
+    private let flingMinSpeed: CGFloat = 2_500.0
 
     // MARK: - State
 
@@ -59,9 +62,9 @@ final class GestureRecognizer: ObservableObject {
             lastPos = pos
             lastPosTime = now
 
-            // Cancel long press if moved too much
+            // Cancel long press if moved too much (same scale as tapMaxMovement)
             let movement = distance(touchBeganPos, pos)
-            if movement > tapMaxMovement {
+            if movement > tapMaxMovement * 1.2 {
                 cancelLongPressTimer()
             }
 
@@ -96,7 +99,15 @@ final class GestureRecognizer: ObservableObject {
         } else if movement >= tapMaxMovement {
             // Swipe
             let dir = swipeDirection(from: touchBeganPos, to: lastPos)
-            emit(TBPPacket.gesture(type: .swipe, fingers: 1, param1: dir, param2: Int16(movement / 100)))
+            let mag = Double(movement / 100)
+            let param2: Int16
+            if mag.isFinite {
+                let clamped = max(min(mag, Double(Int16.max)), Double(Int16.min))
+                param2 = Int16(clamping: Int(clamped.rounded()))
+            } else {
+                param2 = 0
+            }
+            emit(TBPPacket.gesture(type: .swipe, fingers: 1, param1: dir, param2: param2))
         }
     }
 

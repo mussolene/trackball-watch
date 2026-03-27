@@ -13,7 +13,7 @@ struct MainView: View {
             List {
                 // Relay status
                 Section {
-                    StatusRow(relay: relay)
+                    StatusRow(relay: relay, pairing: pairing)
                 }
 
                 // Saved connections
@@ -110,19 +110,56 @@ struct MainView: View {
 
 struct StatusRow: View {
     @ObservedObject var relay: WatchRelayService
+    @ObservedObject var pairing: PairingService
+
+    private var statusColor: Color {
+        switch relay.desktopLinkState {
+        case .connected: return .green
+        case .connecting, .waiting: return .yellow
+        case .failed: return .red
+        case .idle: return relay.isRunning ? .yellow : .red
+        }
+    }
+
+    private var statusText: String {
+        switch relay.desktopLinkState {
+        case .connected:
+            return "Desktop connected"
+        case .connecting:
+            return "Connecting to desktop…"
+        case .waiting:
+            return "Desktop unavailable (waiting network)"
+        case .failed:
+            return "Desktop connection failed"
+        case .idle:
+            return relay.isRunning ? "Relay running (no desktop selected)" : "Relay stopped"
+        }
+    }
 
     var body: some View {
-        HStack {
-            Circle()
-                .fill(relay.isRunning ? Color.green : Color.red)
-                .frame(width: 10, height: 10)
-            Text(relay.isRunning ? "Relay active" : "Relay stopped")
-            Spacer()
-            Button(relay.isRunning ? "Stop" : "Start") {
-                if relay.isRunning { relay.stop() } else { relay.start() }
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Circle()
+                    .fill(statusColor)
+                    .frame(width: 10, height: 10)
+                Text(statusText)
+                Spacer()
+                Button(relay.isRunning ? "Stop" : "Start") {
+                    if relay.isRunning { relay.stop() } else { relay.start() }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
             }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
+
+            if let active = pairing.activeConnection {
+                Text("Selected desktop: \(active.host):\(active.port)")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("No desktop selected. Choose one in 'My Desktops' or 'Nearby Desktops'.")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import CryptoKit
+import Darwin
 
 /// Handles device pairing and manages the list of saved desktop connections.
 @MainActor
@@ -35,6 +36,18 @@ final class PairingService: ObservableObject {
             DesktopConfig.saveActiveId(activeId)
             DesktopConfig.clearLegacy()
         }
+
+        // Migrate stale link-local destinations to stable mDNS hostnames.
+        let normalized = connections.map { cfg in
+            let host = Self.normalizeHost(cfg.host, fallbackName: cfg.name)
+            if host == cfg.host { return cfg }
+            return DesktopConfig(host: host, port: cfg.port, deviceId: cfg.deviceId, name: cfg.name)
+        }
+        if normalized != connections {
+            connections = normalized
+            persist()
+        }
+
     }
 
     // MARK: - QR code parsing
@@ -70,7 +83,7 @@ final class PairingService: ObservableObject {
             enteredPIN = ""
             showPINEntry = true
         } else {
-            let config = DesktopConfig(host: desktop.host, port: desktop.port,
+            let config = DesktopConfig(host: Self.normalizeHost(desktop.host, fallbackName: desktop.name), port: desktop.port,
                                        deviceId: desktop.id, name: desktop.name)
             Task { await pair(with: config) }
         }
@@ -80,7 +93,7 @@ final class PairingService: ObservableObject {
         guard let desktop = pendingDesktop else { return }
         let expectedPIN = Self.pin(for: desktop)
         if enteredPIN == expectedPIN || enteredPIN.isEmpty {
-            let config = DesktopConfig(host: desktop.host, port: desktop.port,
+            let config = DesktopConfig(host: Self.normalizeHost(desktop.host, fallbackName: desktop.name), port: desktop.port,
                                        deviceId: desktop.id, name: desktop.name)
             Task { await pair(with: config) }
         } else {
@@ -104,6 +117,67 @@ final class PairingService: ObservableObject {
             ptr.load(as: UInt32.self)
         }
         return String(format: "%06d", value % 1_000_000)
+    }
+
+    private static func normalizeHost(_ host: String, fallbackName: String) -> String {
+        if let resolved = resolveHostnameToLanIPv4(host) {
+            return resolved
+        }
+        if host.hasPrefix("fe80:") || host.contains("%") || host.hasPrefix("169.254.") {
+            let trimmed = fallbackName.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                if let resolved = resolveHostnameToLanIPv4("\(trimmed).local") {
+                    return resolved
+                }
+            }
+        }
+        return host
+    }
+
+    private static func resolveHostnameToLanIPv4(_ hostname: String) -> String? {
+        let parts = hostname.split(separator: ".")
+        if parts.count == 4,
+           let a = Int(parts[0]), let b = Int(parts[1]), let c = Int(parts[2]), let d = Int(parts[3]),
+           (0...255).contains(a), (0...255).contains(b), (0...255).contains(c), (0...255).contains(d) {
+            let isPrivate = a == 10 || (a == 172 && (16...31).contains(b)) || (a == 192 && b == 168)
+            return isPrivate ? hostname : nil
+        }
+
+        var hints = addrinfo(
+            ai_flags: AI_ADDRCONFIG,
+            ai_family: AF_INET,
+            ai_socktype: SOCK_DGRAM,
+            ai_protocol: IPPROTO_UDP,
+            ai_addrlen: 0,
+            ai_canonname: nil,
+            ai_addr: nil,
+            ai_next: nil
+        )
+        var res: UnsafeMutablePointer<addrinfo>?
+        let rc = getaddrinfo(hostname, nil, &hints, &res)
+        guard rc == 0, let first = res else { return nil }
+        defer { freeaddrinfo(first) }
+
+        var ptr: UnsafeMutablePointer<addrinfo>? = first
+        while let ai = ptr {
+            if ai.pointee.ai_family == AF_INET, let sa = ai.pointee.ai_addr {
+                var sin = sa.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee }
+                var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
+                if inet_ntop(AF_INET, &sin.sin_addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil {
+                    let ip = String(cString: buf)
+                    let p = ip.split(separator: ".").compactMap { Int($0) }
+                    if p.count == 4 {
+                        let isPrivate =
+                            p[0] == 10 ||
+                            (p[0] == 172 && (16...31).contains(p[1])) ||
+                            (p[0] == 192 && p[1] == 168)
+                        if isPrivate { return ip }
+                    }
+                }
+            }
+            ptr = ai.pointee.ai_next
+        }
+        return nil
     }
 
     // MARK: - Core pairing flow
@@ -162,7 +236,7 @@ final class PairingService: ObservableObject {
 
 // MARK: - Desktop config model
 
-struct DesktopConfig: Codable, Identifiable {
+struct DesktopConfig: Codable, Identifiable, Equatable {
     let host: String
     let port: UInt16
     let deviceId: String

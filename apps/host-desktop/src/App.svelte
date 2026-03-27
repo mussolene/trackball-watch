@@ -9,12 +9,26 @@
 
   interface ConnectedPeer { addr: string }
   interface ConnectionStatus { state: string; peer: ConnectedPeer | null }
+  interface PairingHost {
+    host: string;
+    interface: string;
+  }
+  interface PairingInfo {
+    pairing_url: string;
+    host: string;
+    port: number;
+    device_id: string;
+    pin: string;
+    interface: string;
+    hosts: PairingHost[];
+  }
 
-  let config: any = null;
+  let config: any = defaultConfig();
   let connectionStatus: ConnectionStatus = { state: 'disconnected', peer: null };
   let activeTab = 'settings';
   let qrDataUrl = '';
-  let pairingInfo: any = null;
+  let pairingInfo: PairingInfo | null = null;
+  let loadError: string | null = null;
   let toast: string | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
 
@@ -31,6 +45,53 @@
     const resolved =
       t ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', resolved);
+  }
+
+  function defaultConfig() {
+    return {
+      sensitivity: 1.0,
+      mode: 'trackpad',
+      hand: 'right',
+      accel: {
+        curve: 's_curve',
+        sensitivity: 1.0,
+        knee_point: 5.0,
+        max_delta: 40.0
+      },
+      kalman_q_pos: 0.1,
+      kalman_q_vel: 1.0,
+      kalman_r_noise: 0.5,
+      trackball_friction: 0.92,
+      udp_port: 47474,
+      start_minimized: true,
+      start_on_login: false
+    };
+  }
+
+  async function loadInitialData() {
+    loadError = null;
+    try {
+      config = await invoke('get_config');
+    } catch (e) {
+      // Keep UI usable even if backend config command fails.
+      config = defaultConfig();
+      loadError = 'Failed to load desktop settings. Showing defaults.';
+    }
+
+    try {
+      connectionStatus = await invoke('get_connection_status');
+    } catch (e) {
+      connectionStatus = { state: 'disconnected', peer: null };
+      loadError ??= 'Failed to read connection status.';
+    }
+
+    try {
+      await loadPairingInfo();
+    } catch (e) {
+      loadError ??= 'Failed to load pairing info (QR/PIN).';
+      pairingInfo = null;
+      qrDataUrl = '';
+    }
   }
 
   onMount(() => {
@@ -58,9 +119,7 @@
         }
       });
 
-      config = await invoke('get_config');
-      connectionStatus = await invoke('get_connection_status');
-      await loadPairingInfo();
+      await loadInitialData();
 
       // Event-driven status — no polling needed
       unlistenStatus = await listen<ConnectionStatus>('connection_status_changed', (event) => {
@@ -91,12 +150,26 @@
   });
 
   async function saveConfig() {
-    await invoke('save_config', { config });
+    try {
+      await invoke('save_config', { config });
+    } catch (e: any) {
+      const msg = typeof e === 'string' ? e : (e?.message ?? 'unknown error');
+      showToast(`Failed to save setting: ${msg}`);
+    }
   }
 
   async function loadPairingInfo() {
-    pairingInfo = await invoke('get_pairing_info');
+    pairingInfo = await invoke<PairingInfo>('get_pairing_info');
     qrDataUrl = await QRCode.toDataURL(pairingInfo.pairing_url, { width: 200, margin: 1 });
+  }
+
+  async function refreshPairingInfo() {
+    try {
+      await loadPairingInfo();
+      showToast('Pairing info refreshed');
+    } catch {
+      loadError = 'Failed to refresh pairing info.';
+    }
   }
 
   async function disconnectDevice() {
@@ -126,33 +199,52 @@
     {/if}
   </nav>
 
-  {#if config}
+  <section class="content-panel">
+    {#if loadError}
+      <div class="error-banner">{loadError}</div>
+    {/if}
     {#if activeTab === 'settings'}
       <Settings bind:config on:save={saveConfig} />
     {:else if activeTab === 'pairing'}
       <div class="pairing-tab">
-        <p>Launch the iPhone app and tap "Pair New Desktop" to connect.</p>
+        <p>In iPhone app: connect this desktop, keep relay active, then move finger on watch trackpad.</p>
         {#if qrDataUrl && pairingInfo}
           <img src={qrDataUrl} alt="Pairing QR" class="qr-image" />
           <small class="pairing-line">PIN: <b>{pairingInfo.pin}</b></small>
           <small class="pairing-line">{pairingInfo.host}:{pairingInfo.port}</small>
+          <small class="pairing-line">Interface: {pairingInfo.interface}</small>
+          {#if pairingInfo.hosts?.length}
+            <div class="host-list">
+              {#each pairingInfo.hosts as h}
+                <small class="pairing-line mono">{h.interface}: {h.host}:{pairingInfo.port}</small>
+              {/each}
+            </div>
+          {/if}
           <small class="pairing-line mono">{pairingInfo.pairing_url}</small>
         {:else}
-          <div class="qr-placeholder"><span>Generating QR…</span></div>
+          <div class="qr-placeholder"><span>QR unavailable</span></div>
+          <small class="pairing-line">Open iPhone app and use manual IP entry: port 47474.</small>
         {/if}
+        <button class="refresh-btn" on:click={refreshPairingInfo}>Refresh QR/PIN</button>
       </div>
     {/if}
-  {:else}
-    <div class="loading">Loading…</div>
-  {/if}
+  </section>
+
 </main>
 
 <style>
-  :global(html[data-theme="light"] body),
+  :global(html),
+  :global(body),
+  :global(#app) {
+    height: 100%;
+  }
+
   :global(body) {
+    margin: 0;
     background: #fff;
     color: #1a1a1a;
   }
+
   :global(html[data-theme="dark"] body) {
     background: #1c1c1e;
     color: #f2f2f7;
@@ -160,15 +252,21 @@
 
   main {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    max-width: 400px;
+    width: 100%;
+    max-width: 460px;
+    min-height: 100%;
     margin: 0 auto;
-    padding: 16px;
+    padding: 14px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: inherit;
   }
 
   nav {
     display: flex;
     gap: 8px;
-    margin-bottom: 16px;
+    margin-bottom: 0;
     border-bottom: 1px solid #e0e0e0;
     padding-bottom: 8px;
     align-items: center;
@@ -238,14 +336,42 @@
     to   { opacity: 1; transform: translateY(0); }
   }
 
-  .loading {
-    text-align: center;
-    color: #999;
-    padding: 32px;
+  .refresh-btn {
+    margin-top: 8px;
+    border: 1px solid #0a84ff;
+    background: #0a84ff;
+    color: white;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .error-banner {
+    background: rgba(255, 59, 48, 0.12);
+    color: #ff3b30;
+    border: 1px solid rgba(255, 59, 48, 0.35);
+    border-radius: 8px;
+    font-size: 12px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+  }
+
+  .content-panel {
+    border: 1px solid #e5e5ea;
+    border-radius: 12px;
+    padding: 14px;
+    background: rgba(0, 0, 0, 0.02);
+    min-height: 280px;
+  }
+
+  :global(html[data-theme="dark"]) .content-panel {
+    border-color: #3a3a3c;
+    background: rgba(255, 255, 255, 0.02);
   }
 
   .pairing-tab {
-    padding: 16px 0;
+    padding: 8px 0;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -287,5 +413,14 @@
     font-size: 11px;
     text-align: center;
     word-break: break-all;
+  }
+
+  .host-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    align-items: center;
   }
 </style>

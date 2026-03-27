@@ -45,6 +45,16 @@ struct InputCaptureView: View {
                         handleSpatialEventsEnded(events, in: geo.size)
                     }
             )
+            .onAppear {
+                // Forward all classified gestures; the host ignores types it does not use.
+                // Previously we dropped swipe/fling — combined with a too-tight tap radius (500 in TBP space ≈ 1px), taps were misclassified and never forwarded, so clicks never reached the Mac.
+                gestureRecognizer.onGestureDetected = { packet in
+                    sessionManager.send(packet)
+                }
+            }
+            .onDisappear {
+                gestureRecognizer.onGestureDetected = nil
+            }
         }
     }
 
@@ -76,8 +86,8 @@ struct InputCaptureView: View {
             let packet = TBPPacket.touch(
                 touchId: 0,
                 phase: phase,
-                x: Int16(normX),
-                y: Int16(normY),
+                x: clampToInt16(normX),
+                y: clampToInt16(normY),
                 pressure: 0
             )
             sessionManager.send(packet)
@@ -94,8 +104,8 @@ struct InputCaptureView: View {
         let packet = TBPPacket.touch(
             touchId: 0,
             phase: .ended,
-            x: Int16(touchPos.x),
-            y: Int16(touchPos.y),
+            x: clampToInt16(touchPos.x),
+            y: clampToInt16(touchPos.y),
             pressure: 0
         )
         sessionManager.send(packet)
@@ -104,8 +114,18 @@ struct InputCaptureView: View {
 
     /// Normalize a value in `range` to -32767...32767.
     private func normalize(_ value: CGFloat, range: ClosedRange<CGFloat>) -> CGFloat {
-        let t = (value - range.lowerBound) / (range.upperBound - range.lowerBound)
-        return (t * 2.0 - 1.0) * 32767.0
+        let span = range.upperBound - range.lowerBound
+        guard span > 0 else { return 0 }
+        let t = (value - range.lowerBound) / span
+        let clampedT = max(0, min(1, t))
+        return (clampedT * 2.0 - 1.0) * 32767.0
+    }
+
+    /// `Int16(_: CGFloat)` traps on NaN/Inf or out-of-range; always clamp before packing TBP coords.
+    private func clampToInt16(_ value: CGFloat) -> Int16 {
+        guard value.isFinite else { return 0 }
+        let d = max(min(Double(value), Double(Int16.max)), Double(Int16.min))
+        return Int16(clamping: Int(d.rounded()))
     }
 }
 

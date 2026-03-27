@@ -5,6 +5,7 @@ pub mod server;
 pub mod settings;
 
 use sha2::{Digest, Sha256};
+use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
 use tauri::{
     menu::{Menu, MenuItem},
@@ -17,15 +18,20 @@ use engine::kalman::{Kalman2D, KalmanConfig};
 use engine::trackball::TrackballState;
 use protocol::packets::{GestureType, TouchPhase};
 use server::udp::{InputEvent, UdpServer};
-use settings::config::{AppConfig, InputMode};
+use settings::config::{AppConfig, Hand, InputMode};
 
 /// Shared application state (input pipeline + connection info).
 struct AppState {
     config: AppConfig,
     kalman: Kalman2D,
     trackball: TrackballState,
+    /// Last raw TBP coordinates (for delta-based pointer motion).
+    last_raw_x: f64,
+    last_raw_y: f64,
     last_touch_x: f64,
     last_touch_y: f64,
+    smoothed_dx: f64,
+    smoothed_dy: f64,
     connected_peer: Option<ConnectedPeer>,
     /// Send raw packets to the connected peer via the UDP server socket.
     udp_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
@@ -43,8 +49,12 @@ impl AppState {
             config,
             kalman,
             trackball,
+            last_raw_x: 0.0,
+            last_raw_y: 0.0,
             last_touch_x: 0.0,
             last_touch_y: 0.0,
+            smoothed_dx: 0.0,
+            smoothed_dy: 0.0,
             connected_peer: None,
             udp_tx: None,
         }
@@ -72,14 +82,26 @@ fn get_config(state: tauri::State<Arc<Mutex<AppState>>>) -> AppConfig {
 #[tauri::command]
 fn save_config(config: AppConfig, state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(), String> {
     config.save().map_err(|e| e.to_string())?;
-    let mut s = state.lock().unwrap();
-    s.kalman = Kalman2D::new(KalmanConfig {
-        q_pos: config.kalman_q_pos,
-        q_vel: config.kalman_q_vel,
-        r_noise: config.kalman_r_noise,
-    });
-    s.trackball = TrackballState::new(config.trackball_friction, 0.5);
-    s.config = config;
+    let mut pending_mode_push: Option<(tokio::sync::mpsc::UnboundedSender<Vec<u8>>, InputMode, Hand)> =
+        None;
+    {
+        let mut s = state.lock().unwrap();
+        s.kalman = Kalman2D::new(KalmanConfig {
+            q_pos: config.kalman_q_pos,
+            q_vel: config.kalman_q_vel,
+            r_noise: config.kalman_r_noise,
+        });
+        s.trackball = TrackballState::new(config.trackball_friction, 0.5);
+        s.config = config;
+        if let (Some(tx), Some(_)) = (s.udp_tx.clone(), s.connected_peer.as_ref()) {
+            pending_mode_push = Some((tx, s.config.mode, s.config.hand));
+        }
+    }
+    if let Some((tx, mode, hand)) = pending_mode_push {
+        if let Err(e) = send_mode_packet(&tx, mode, hand) {
+            log::warn!("mode push after save failed: {}", e);
+        }
+    }
     Ok(())
 }
 
@@ -120,9 +142,21 @@ fn get_profiles() -> Vec<settings::profiles::Profile> {
 
 #[tauri::command]
 fn push_mode(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(), String> {
-    use crate::protocol::packets::{encode_header, packet_type, PacketHeader};
     let s = state.lock().unwrap();
-    let mode_byte: u8 = if s.config.mode == InputMode::Trackball { 1 } else { 0 };
+    if let Some(tx) = &s.udp_tx {
+        send_mode_packet(tx, s.config.mode, s.config.hand)?;
+    }
+    Ok(())
+}
+
+fn send_mode_packet(
+    tx: &tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    mode: InputMode,
+    hand: Hand,
+) -> Result<(), String> {
+    use crate::protocol::packets::{encode_header, packet_type, PacketHeader};
+    let mode_byte: u8 = if mode == InputMode::Trackball { 1 } else { 0 };
+    let hand_byte: u8 = if hand == Hand::Left { 1 } else { 0 };
     let header = PacketHeader {
         seq: 0,
         packet_type: packet_type::CONFIG,
@@ -134,10 +168,8 @@ fn push_mode(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(), String> {
     };
     let mut packet = encode_header(&header).map_err(|e| format!("{:?}", e))?;
     packet.push(mode_byte);
-    if let Some(tx) = &s.udp_tx {
-        tx.send(packet).map_err(|e| e.to_string())?;
-    }
-    Ok(())
+    packet.push(hand_byte);
+    tx.send(packet).map_err(|e| e.to_string())
 }
 
 #[derive(serde::Serialize)]
@@ -147,12 +179,24 @@ struct PairingInfo {
     port: u16,
     device_id: String,
     pin: String,
+    interface: String,
+    hosts: Vec<PairingHost>,
+}
+
+#[derive(serde::Serialize)]
+struct PairingHost {
+    host: String,
+    interface: String,
 }
 
 #[tauri::command]
 fn get_pairing_info(state: tauri::State<Arc<Mutex<AppState>>>) -> PairingInfo {
     let s = state.lock().unwrap();
-    let host = local_ip_address().unwrap_or_else(|| "127.0.0.1".to_string());
+    let bindings = local_lan_bindings();
+    let (host, iface) = bindings
+        .first()
+        .map(|b| (b.host.clone(), b.interface.clone()))
+        .unwrap_or_else(|| ("127.0.0.1".to_string(), "loopback".to_string()));
     let port = s.config.udp_port;
     let device_id = s.config.device_id.clone();
     let pairing_url = format!("tbp://pair?host={host}&port={port}&id={device_id}");
@@ -162,6 +206,14 @@ fn get_pairing_info(state: tauri::State<Arc<Mutex<AppState>>>) -> PairingInfo {
         host,
         port,
         device_id,
+        interface: iface,
+        hosts: bindings
+            .into_iter()
+            .map(|b| PairingHost {
+                host: b.host,
+                interface: b.interface,
+            })
+            .collect(),
     }
 }
 
@@ -253,6 +305,7 @@ pub fn run() {
             let state_for_thread = app_state_udp;
             let handle_for_thread = app_handle;
 
+            let lan_bindings = local_lan_bindings();
             std::thread::spawn(move || {
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
@@ -260,7 +313,11 @@ pub fn run() {
                     .expect("tokio runtime");
                 rt.block_on(async move {
                     let _mdns = if let Ok(mut mdns) = server::mdns::MdnsAdvertiser::new() {
-                        let _ = mdns.advertise(udp_port, &device_id);
+                        let mdns_hosts: Vec<(String, String)> = lan_bindings
+                            .iter()
+                            .map(|b| (b.host.clone(), b.interface.clone()))
+                            .collect();
+                        let _ = mdns.advertise_many(udp_port, &device_id, &mdns_hosts);
                         Some(mdns)
                     } else {
                         None
@@ -303,27 +360,64 @@ fn update_tray(app: &tauri::AppHandle, connected: bool, peer_addr: Option<&str>)
     }
 }
 
-fn local_ip_address() -> Option<String> {
-    // Try each RFC-1918 LAN subnet to find the real LAN interface.
-    // This avoids returning the VPN tunnel IP (e.g. 198.18.x.x) which
-    // the iPhone can't reach directly.
-    for target in &["192.168.1.1:80", "10.0.0.1:80", "172.16.0.1:80"] {
-        let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
-        if socket.connect(target).is_ok() {
-            if let Ok(addr) = socket.local_addr() {
-                let ip = addr.ip().to_string();
-                // Skip loopback and link-local addresses
-                if !ip.starts_with("127.") && !ip.starts_with("169.254.") {
-                    return Some(ip);
-                }
-            }
+#[derive(Clone)]
+struct LanBinding {
+    host: String,
+    interface: String,
+}
+
+fn local_lan_bindings() -> Vec<LanBinding> {
+    let addrs = match if_addrs::get_if_addrs() {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    let mut candidates: Vec<(u8, String, String)> = Vec::new();
+    for iface in addrs {
+        let ip = match iface.ip() {
+            std::net::IpAddr::V4(v4) => v4,
+            std::net::IpAddr::V6(_) => continue,
+        };
+
+        if !is_rfc1918_ipv4(ip) {
+            continue;
         }
+        let name = iface.name;
+        let prio = interface_priority(&name);
+        candidates.push((prio, ip.to_string(), name));
     }
-    // Fallback: default route (may be VPN)
-    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
-    socket.connect("8.8.8.8:80").ok()?;
-    let addr = socket.local_addr().ok()?;
-    Some(addr.ip().to_string())
+
+    candidates.sort_by(|a, b| {
+        let by_prio = a.0.cmp(&b.0);
+        if by_prio == std::cmp::Ordering::Equal {
+            a.2.cmp(&b.2)
+        } else {
+            by_prio
+        }
+    });
+    candidates.dedup_by(|a, b| a.1 == b.1 && a.2 == b.2);
+
+    candidates
+        .into_iter()
+        .map(|(_, ip, iface)| LanBinding {
+            host: ip,
+            interface: iface,
+        })
+        .collect()
+}
+
+fn is_rfc1918_ipv4(ip: Ipv4Addr) -> bool {
+    let o = ip.octets();
+    o[0] == 10 || (o[0] == 172 && (16..=31).contains(&o[1])) || (o[0] == 192 && o[1] == 168)
+}
+
+fn interface_priority(name: &str) -> u8 {
+    if name.starts_with("en0") || name.starts_with("wlan") || name.starts_with("wifi") {
+        0
+    } else if name.starts_with("en") || name.starts_with("eth") {
+        1
+    } else {
+        2
+    }
 }
 
 fn pairing_pin(host: &str, port: u16) -> String {
@@ -365,6 +459,15 @@ fn handle_input_event(
                 let _ = win.show();
                 let _ = win.set_focus();
             }
+
+            // Ensure watch mode reflects current desktop mode right after link-up.
+            let mode_push = {
+                let s = state.lock().unwrap();
+                s.udp_tx.clone().map(|tx| (tx, s.config.mode, s.config.hand))
+            };
+            if let Some((tx, mode, hand)) = mode_push {
+                let _ = send_mode_packet(&tx, mode, hand);
+            }
         }
 
         InputEvent::Disconnected => {
@@ -374,6 +477,10 @@ fn handle_input_event(
                 s.connected_peer = None;
                 s.kalman.reset();
                 s.trackball.stop();
+                s.smoothed_dx = 0.0;
+                s.smoothed_dy = 0.0;
+                s.last_raw_x = 0.0;
+                s.last_raw_y = 0.0;
             }
             let payload = ConnectionStatusPayload {
                 state: "disconnected".into(),
@@ -399,16 +506,79 @@ fn handle_input_event(
             if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
                 s.kalman.reset();
                 s.trackball.stop();
+                s.smoothed_dx = 0.0;
+                s.smoothed_dy = 0.0;
+                s.last_raw_x = 0.0;
+                s.last_raw_y = 0.0;
                 return;
             }
 
-            let filtered = s.kalman.update(payload.x as f64, payload.y as f64);
-            let dx = filtered[0] - s.last_touch_x;
-            let dy = filtered[1] - s.last_touch_y;
-            s.last_touch_x = filtered[0];
-            s.last_touch_y = filtered[1];
+            let x = payload.x as f64;
+            let y = payload.y as f64;
 
             if phase == TouchPhase::Began {
+                let _ = s.kalman.update(x, y);
+                s.last_raw_x = x;
+                s.last_raw_y = y;
+                s.last_touch_x = x;
+                s.last_touch_y = y;
+                s.smoothed_dx = 0.0;
+                s.smoothed_dy = 0.0;
+                return;
+            }
+
+            // Raw delta between successive samples. Kalman on absolute position was crushing
+            // per-frame deltas (filtered position barely moves), which made the cursor stick.
+            let mut dx = x - s.last_raw_x;
+            let mut dy = y - s.last_raw_y;
+            s.last_raw_x = x;
+            s.last_raw_y = y;
+            s.last_touch_x = x;
+            s.last_touch_y = y;
+
+            // Global sensitivity slider × accel curve sensitivity (UI updates `sensitivity`).
+            let user_scale = s.config.sensitivity.max(0.05);
+            dx *= user_scale;
+            dy *= user_scale;
+
+            // Adaptive deadzone + adaptive low-pass:
+            // - low speed: stronger filtering (less jitter)
+            // - high speed: lighter filtering (better responsiveness)
+            const MAX_DELTA: f64 = 8000.0;
+            let speed = (dx * dx + dy * dy).sqrt();
+            let jitter_deadzone = if speed < 120.0 {
+                18.0
+            } else if speed < 420.0 {
+                10.0
+            } else {
+                4.0
+            };
+
+            if dx.abs() < jitter_deadzone {
+                dx = 0.0;
+            }
+            if dy.abs() < jitter_deadzone {
+                dy = 0.0;
+            }
+            if dx == 0.0 && dy == 0.0 {
+                return;
+            }
+            dx = dx.clamp(-MAX_DELTA, MAX_DELTA);
+            dy = dy.clamp(-MAX_DELTA, MAX_DELTA);
+
+            let alpha = if speed < 120.0 {
+                0.28
+            } else if speed < 700.0 {
+                0.48
+            } else {
+                0.74
+            };
+            s.smoothed_dx += alpha * (dx - s.smoothed_dx);
+            s.smoothed_dy += alpha * (dy - s.smoothed_dy);
+            dx = s.smoothed_dx;
+            dy = s.smoothed_dy;
+
+            if dx.abs() < 0.5 && dy.abs() < 0.5 {
                 return;
             }
 
