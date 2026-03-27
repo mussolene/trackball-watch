@@ -1,6 +1,9 @@
 import Foundation
 import Network
 import Combine
+import OSLog
+
+private let log = Logger(subsystem: "com.trackball-watch.app", category: "BonjourBrowser")
 
 /// Discovered desktop via mDNS/Bonjour (_tbp._udp.local).
 struct DiscoveredDesktop: Identifiable, Equatable {
@@ -27,19 +30,23 @@ final class BonjourBrowser: ObservableObject {
     func start() {
         guard browser == nil else { return }
         isSearching = true
+        log.info("Starting Bonjour browser for _tbp._udp.local.")
 
         let params = NWParameters()
         params.includePeerToPeer = true
 
         let b = NWBrowser(for: .bonjour(type: "_tbp._udp.", domain: "local."), using: params)
         b.stateUpdateHandler = { [weak self] state in
+            log.info("Browser state: \(String(describing: state), privacy: .public)")
             Task { @MainActor [weak self] in
-                if case .failed = state {
+                if case .failed(let err) = state {
+                    log.error("Browser failed: \(err, privacy: .public)")
                     self?.isSearching = false
                 }
             }
         }
         b.browseResultsChangedHandler = { [weak self] results, _ in
+            log.info("Browse results changed: \(results.count, privacy: .public) results")
             Task { @MainActor [weak self] in
                 self?.handleResults(results)
             }
@@ -60,10 +67,10 @@ final class BonjourBrowser: ObservableObject {
     // MARK: - Private
 
     private func handleResults(_ results: Set<NWBrowser.Result>) {
-        var current: [DiscoveredDesktop] = []
-
+        log.info("Handling \(results.count, privacy: .public) Bonjour results")
         for result in results {
             guard case .service(let name, _, _, _) = result.endpoint else { continue }
+            log.info("Found service: \(name, privacy: .public)")
 
             // Resolve host+port via NWConnection
             let conn = NWConnection(to: result.endpoint, using: .udp)
@@ -71,12 +78,14 @@ final class BonjourBrowser: ObservableObject {
             resolvers[name] = conn
 
             conn.stateUpdateHandler = { [weak self] state in
+                log.info("Resolver state for \(name, privacy: .public): \(String(describing: state), privacy: .public)")
                 if case .ready = state {
                     if let path = conn.currentPath,
                        let endpoint = path.remoteEndpoint,
                        case .hostPort(let host, let port) = endpoint {
                         let hostStr = "\(host)"
                         let portVal = port.rawValue
+                        log.info("Resolved \(name, privacy: .public) → \(hostStr, privacy: .public):\(portVal, privacy: .public)")
                         let desktop = DiscoveredDesktop(
                             id: name,
                             name: name,
@@ -86,6 +95,8 @@ final class BonjourBrowser: ObservableObject {
                         Task { @MainActor [weak self] in
                             self?.upsert(desktop)
                         }
+                    } else {
+                        log.warning("Resolved \(name, privacy: .public) but no hostPort endpoint in path")
                     }
                     conn.cancel()
                 }

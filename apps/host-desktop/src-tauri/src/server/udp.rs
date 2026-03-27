@@ -70,6 +70,7 @@ impl UdpServer {
             };
 
             let data = &buf[..len];
+            log::debug!("UDP recv {} bytes from {}", len, peer);
 
             // Check for timeout on existing session
             {

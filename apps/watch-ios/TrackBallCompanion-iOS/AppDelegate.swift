@@ -24,11 +24,13 @@ class AppDelegate: NSObject, UIApplicationDelegate {
     }
 
     // MARK: - PushKit
-
+    // VoIP wakeup — only on real devices (PushKit crashes on simulator without CallKit)
     private func setupPushKit() {
+        #if !targetEnvironment(simulator)
         pushKitRegistry = PKPushRegistry(queue: .main)
         pushKitRegistry?.delegate = self
         pushKitRegistry?.desiredPushTypes = [.voIP]
+        #endif
     }
 }
 

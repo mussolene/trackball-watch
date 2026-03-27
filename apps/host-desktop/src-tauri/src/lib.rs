@@ -263,6 +263,22 @@ fn update_tray(app: &tauri::AppHandle, connected: bool, peer_addr: Option<&str>)
 }
 
 fn local_ip_address() -> Option<String> {
+    // Try each RFC-1918 LAN subnet to find the real LAN interface.
+    // This avoids returning the VPN tunnel IP (e.g. 198.18.x.x) which
+    // the iPhone can't reach directly.
+    for target in &["192.168.1.1:80", "10.0.0.1:80", "172.16.0.1:80"] {
+        let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+        if socket.connect(target).is_ok() {
+            if let Ok(addr) = socket.local_addr() {
+                let ip = addr.ip().to_string();
+                // Skip loopback and link-local addresses
+                if !ip.starts_with("127.") && !ip.starts_with("169.254.") {
+                    return Some(ip);
+                }
+            }
+        }
+    }
+    // Fallback: default route (may be VPN)
     let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
     socket.connect("8.8.8.8:80").ok()?;
     let addr = socket.local_addr().ok()?;

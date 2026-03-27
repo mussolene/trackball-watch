@@ -1,5 +1,8 @@
 import Foundation
 import Network
+import OSLog
+
+private let log = Logger(subsystem: "com.trackball-watch.app", category: "UDPRelay")
 
 /// UDP client that sends TBP packets to the desktop host.
 final class UDPRelay {
@@ -22,15 +25,19 @@ final class UDPRelay {
         let params = NWParameters.udp
         params.allowLocalEndpointReuse = true
         let conn = NWConnection(to: endpoint, using: params)
+        let hostCopy = host, portCopy = port
+        log.info("Connecting UDP to \(hostCopy, privacy: .public):\(portCopy, privacy: .public)")
         conn.stateUpdateHandler = { [weak self] state in
             switch state {
             case .ready:
-                print("[UDPRelay] Connected to \(self?.host ?? ""):\(self?.port ?? 0)")
+                log.info("UDP ready → \(hostCopy, privacy: .public):\(portCopy, privacy: .public)")
                 self?.sendHandshake()
             case .failed(let error):
-                print("[UDPRelay] Connection failed: \(error)")
+                log.error("UDP failed: \(error, privacy: .public)")
+            case .waiting(let error):
+                log.warning("UDP waiting: \(error, privacy: .public)")
             default:
-                break
+                log.debug("UDP state: \(String(describing: state), privacy: .public)")
             }
         }
         conn.start(queue: queue)
@@ -38,7 +45,11 @@ final class UDPRelay {
     }
 
     func send(_ data: Data) {
-        connection?.send(content: data, completion: .idempotent)
+        connection?.send(content: data, completion: .contentProcessed { error in
+            if let error = error {
+                log.error("send failed: \(error, privacy: .public)")
+            }
+        })
     }
 
     func cancel() {
@@ -51,11 +62,13 @@ final class UDPRelay {
     /// Send a HANDSHAKE packet to initiate a session on the desktop.
     /// Packet format: [seq:u16 LE][type:u8=0x10][flags:u8=0][timestamp_us:u32 LE]
     func sendHandshake() {
+        log.info("Sending HANDSHAKE")
         send(buildPacket(type: 0x10, payload: Data()))
     }
 
     /// Send a HEARTBEAT packet to keep the session alive.
     func sendHeartbeat() {
+        log.debug("Sending HEARTBEAT")
         send(buildPacket(type: 0x11, payload: Data()))
     }
 

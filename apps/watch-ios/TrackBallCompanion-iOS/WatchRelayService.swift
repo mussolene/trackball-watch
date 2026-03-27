@@ -3,6 +3,9 @@ import UIKit
 import WatchConnectivity
 import Network
 import Combine
+import OSLog
+
+private let log = Logger(subsystem: "com.trackball-watch.app", category: "WatchRelay")
 
 /// Core service: receives TBP packets from Apple Watch via WatchConnectivity
 /// and relays them to the desktop host via UDP.
@@ -32,6 +35,7 @@ final class WatchRelayService: NSObject, ObservableObject {
 
     func start() {
         guard !isRunning else { return }
+        log.info("WatchRelayService starting, pairedDesktop=\(self.pairedDesktop?.host ?? "nil", privacy: .public)")
         activateWCSession()
         if let desktop = pairedDesktop {
             connectUDP(to: desktop)
@@ -62,6 +66,7 @@ final class WatchRelayService: NSObject, ObservableObject {
     // MARK: - UDP relay
 
     func connectUDP(to desktop: DesktopConfig) {
+        log.info("connectUDP → \(desktop.host, privacy: .public):\(desktop.port, privacy: .public)")
         pairedDesktop = desktop
         DesktopConfig.save(desktop)
 
@@ -111,7 +116,9 @@ extension WatchRelayService: WCSessionDelegate {
         error: Error?
     ) {
         if let error = error {
-            print("[WatchRelay] WCSession activation error: \(error)")
+            log.error("WCSession activation error: \(error, privacy: .public)")
+        } else {
+            log.info("WCSession activated: \(activationState.rawValue, privacy: .public)")
         }
     }
 
