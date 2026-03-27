@@ -132,8 +132,8 @@
     letter-spacing: 0.05em;
     margin: 0;
   }
-  @media (prefers-color-scheme: dark) {
-    h3 { color: #aeaeb2; }
+  :global(html[data-theme="dark"]) h3 {
+    color: #aeaeb2;
   }
 
   .value {
@@ -158,12 +158,10 @@
     transition: all 0.15s;
     color: #1a1a1a;
   }
-  @media (prefers-color-scheme: dark) {
-    .button-group button {
-      background: #2c2c2e;
-      border-color: #48484a;
-      color: #f2f2f7;
-    }
+  :global(html[data-theme="dark"]) .button-group button {
+    background: #2c2c2e;
+    border-color: #48484a;
+    color: #f2f2f7;
   }
 
   .button-group button.active {
@@ -186,12 +184,10 @@
     width: 100%;
     color: #1a1a1a;
   }
-  @media (prefers-color-scheme: dark) {
-    select {
-      background: #2c2c2e;
-      border-color: #48484a;
-      color: #f2f2f7;
-    }
+  :global(html[data-theme="dark"]) select {
+    background: #2c2c2e;
+    border-color: #48484a;
+    color: #f2f2f7;
   }
 
   small {

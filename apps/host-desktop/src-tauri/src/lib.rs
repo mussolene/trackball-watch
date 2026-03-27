@@ -191,13 +191,9 @@ pub fn run() {
         .setup(move |app| {
             let app_handle = app.handle().clone();
 
-            // Apply system dark/light theme to the webview window
-            #[cfg(target_os = "macos")]
-            {
-                if let Some(win) = app.get_webview_window("main") {
-                    // Follow system appearance — None = auto
-                    let _ = win.set_theme(None);
-                }
+            // WebView follows OS appearance so `prefers-color-scheme` / Tauri theme match.
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.set_theme(None);
             }
 
             // ── Tray ──────────────────────────────────────────────────────────

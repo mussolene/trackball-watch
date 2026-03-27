@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var sessionManager: WatchSessionManager
-    @EnvironmentObject var runtime: ExtendedRuntimeManager
 
     var body: some View {
         NavigationStack {
@@ -32,9 +31,6 @@ struct ContentView: View {
             .navigationTitle("TrackBall")
             .navigationBarTitleDisplayMode(.inline)
         }
-        .onAppear {
-            runtime.startSession()
-        }
     }
 
     private var statusColor: Color {
@@ -46,10 +42,11 @@ struct ContentView: View {
     }
 
     private var statusText: String {
+        // WCSession: only “iPhone reachable” — not the Mac / UDP link.
         switch sessionManager.connectionState {
-        case .connected: return "Connected"
-        case .connecting: return "Connecting…"
-        case .disconnected: return "Disconnected"
+        case .connected: return "iPhone OK"
+        case .connecting: return "Starting…"
+        case .disconnected: return "Open iPhone app"
         }
     }
 }

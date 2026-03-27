@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import QRCode from 'qrcode';
   import Settings from './components/Settings.svelte';
   import StatusBar from './components/StatusBar.svelte';
@@ -23,11 +24,40 @@
     toastTimer = setTimeout(() => { toast = null; }, 4000);
   }
 
+  /** Sync WebView `data-theme` with Tauri window theme (WKWebView often ignores CSS `prefers-color-scheme`). */
+  async function applyWindowTheme() {
+    const win = getCurrentWindow();
+    const t = await win.theme();
+    const resolved =
+      t ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    document.documentElement.setAttribute('data-theme', resolved);
+  }
+
   onMount(() => {
     let unlistenStatus: (() => void) | undefined;
     let unlistenPairing: (() => void) | undefined;
+    let unlistenTheme: (() => void) | undefined;
+    let unlistenFocus: (() => void) | undefined;
+    let mqListener: ((this: MediaQueryList, ev: MediaQueryListEvent) => void) | undefined;
 
     (async () => {
+      await applyWindowTheme();
+      const win = getCurrentWindow();
+      unlistenTheme = await win.onThemeChanged(() => {
+        void applyWindowTheme();
+      });
+      const mq = window.matchMedia('(prefers-color-scheme: dark)');
+      mqListener = () => {
+        void applyWindowTheme();
+      };
+      mq.addEventListener('change', mqListener);
+
+      unlistenFocus = await win.onFocusChanged(async ({ payload: focused }) => {
+        if (focused) {
+          connectionStatus = await invoke('get_connection_status');
+        }
+      });
+
       config = await invoke('get_config');
       connectionStatus = await invoke('get_connection_status');
       await loadPairingInfo();
@@ -52,6 +82,11 @@
     return () => {
       unlistenStatus?.();
       unlistenPairing?.();
+      unlistenTheme?.();
+      unlistenFocus?.();
+      if (mqListener) {
+        window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', mqListener);
+      }
     };
   });
 
@@ -113,9 +148,14 @@
 </main>
 
 <style>
-  :global(body) { background: #fff; color: #1a1a1a; }
-  @media (prefers-color-scheme: dark) {
-    :global(body) { background: #1c1c1e; color: #f2f2f7; }
+  :global(html[data-theme="light"] body),
+  :global(body) {
+    background: #fff;
+    color: #1a1a1a;
+  }
+  :global(html[data-theme="dark"] body) {
+    background: #1c1c1e;
+    color: #f2f2f7;
   }
 
   main {
@@ -133,8 +173,8 @@
     padding-bottom: 8px;
     align-items: center;
   }
-  @media (prefers-color-scheme: dark) {
-    nav { border-bottom-color: #3a3a3c; }
+  :global(html[data-theme="dark"]) nav {
+    border-bottom-color: #3a3a3c;
   }
 
   nav button {
@@ -146,8 +186,8 @@
     font-size: 14px;
     color: #666;
   }
-  @media (prefers-color-scheme: dark) {
-    nav button { color: #aeaeb2; }
+  :global(html[data-theme="dark"]) nav button {
+    color: #aeaeb2;
   }
 
   nav button.active {
@@ -162,8 +202,8 @@
   }
 
   .disconnect-btn:hover { background: #fff0f0 !important; }
-  @media (prefers-color-scheme: dark) {
-    .disconnect-btn:hover { background: #2c1a1a !important; }
+  :global(html[data-theme="dark"]) .disconnect-btn:hover {
+    background: #2c1a1a !important;
   }
 
   .toast {
@@ -228,8 +268,8 @@
     margin: 16px 0;
     gap: 8px;
   }
-  @media (prefers-color-scheme: dark) {
-    .qr-placeholder { border-color: #48484a; }
+  :global(html[data-theme="dark"]) .qr-placeholder {
+    border-color: #48484a;
   }
 
   .qr-placeholder span {
@@ -238,8 +278,8 @@
   }
 
   .pairing-line { color: #666; }
-  @media (prefers-color-scheme: dark) {
-    .pairing-line { color: #aeaeb2; }
+  :global(html[data-theme="dark"]) .pairing-line {
+    color: #aeaeb2;
   }
 
   .mono {

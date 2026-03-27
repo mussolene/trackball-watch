@@ -17,6 +17,8 @@ settings:
     CODE_SIGN_STYLE: Automatic
     # DEVELOPMENT_TEAM comes from Local.xcconfig (not tracked in git)
 
+# iPhone app = UDP relay to the Mac (WatchConnectivity → desktop). It embeds the watchOS
+# app below; there is no separate “companion on watch” — the watch target is TrackBall UI.
 targets:
   TrackBallCompanion-iOS:
     type: application

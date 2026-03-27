@@ -27,12 +27,31 @@ final class WatchSessionManager: NSObject, ObservableObject {
     }
 
     private func activateSession() {
-        guard WCSession.isSupported() else { return }
+        guard WCSession.isSupported() else {
+            connectionState = .disconnected
+            return
+        }
         let session = WCSession.default
         session.delegate = self
         session.activate()
         wcSession = session
         connectionState = .connecting
+    }
+
+    /// `isReachable` is only true when the iPhone companion app is active enough for
+    /// immediate messaging — not “connected to desktop”. Avoid showing `.connected` when
+    /// the phone app is backgrounded / unreachable.
+    private func applySessionState(_ session: WCSession) {
+        switch session.activationState {
+        case .notActivated:
+            connectionState = .connecting
+        case .inactive:
+            connectionState = .disconnected
+        case .activated:
+            connectionState = session.isReachable ? .connected : .disconnected
+        @unknown default:
+            connectionState = .disconnected
+        }
     }
 
     // MARK: - Packet sending
@@ -72,18 +91,17 @@ extension WatchSessionManager: WCSessionDelegate {
         error: Error?
     ) {
         Task { @MainActor in
-            switch activationState {
-            case .activated:
-                connectionState = session.isReachable ? .connected : .connecting
-            default:
-                connectionState = .disconnected
+            if let error {
+                self.connectionState = .disconnected
+                return
             }
+            self.applySessionState(session)
         }
     }
 
     nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         Task { @MainActor in
-            connectionState = session.isReachable ? .connected : .connecting
+            self.applySessionState(session)
         }
     }
 

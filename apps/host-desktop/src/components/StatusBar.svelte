@@ -6,16 +6,16 @@
     : status === 'connecting' ? '#ff9500'
     : '#ff3b30';
 
-  $: label = status === 'connected' ? 'Connected'
-    : status === 'connecting' ? 'Connecting…'
-    : 'Disconnected';
+  $: label = status === 'connected' ? 'Desktop: connected'
+    : status === 'connecting' ? 'Desktop: connecting…'
+    : 'Desktop: idle';
 </script>
 
 <div class="status-bar">
   <div class="dot" style="background: {color}"></div>
   <span class="label">{label}</span>
-  {#if peer}
-    <span class="peer">{peer.addr}</span>
+  {#if status === 'connected'}
+    <span class="peer" title="UDP relay (iPhone)">{peer?.addr ?? 'relay active'}</span>
   {/if}
 </div>
 
@@ -27,9 +27,10 @@
     padding: 10px 0;
     margin-bottom: 8px;
     border-bottom: 1px solid #f0f0f0;
+    flex-wrap: wrap;
   }
-  @media (prefers-color-scheme: dark) {
-    .status-bar { border-bottom-color: #3a3a3c; }
+  :global(html[data-theme="dark"]) .status-bar {
+    border-bottom-color: #3a3a3c;
   }
 
   .dot {
