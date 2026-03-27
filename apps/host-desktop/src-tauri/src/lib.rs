@@ -85,6 +85,7 @@ fn save_config(config: AppConfig, state: tauri::State<Arc<Mutex<AppState>>>) -> 
         tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
         InputMode,
         Hand,
+        f64,
     )> = None;
     {
         let mut s = state.lock().unwrap();
@@ -96,11 +97,11 @@ fn save_config(config: AppConfig, state: tauri::State<Arc<Mutex<AppState>>>) -> 
         s.trackball = TrackballState::new(config.trackball_friction, 0.5);
         s.config = config;
         if let (Some(tx), Some(_)) = (s.udp_tx.clone(), s.connected_peer.as_ref()) {
-            pending_mode_push = Some((tx, s.config.mode, s.config.hand));
+            pending_mode_push = Some((tx, s.config.mode, s.config.hand, s.config.trackball_friction));
         }
     }
-    if let Some((tx, mode, hand)) = pending_mode_push {
-        if let Err(e) = send_mode_packet(&tx, mode, hand) {
+    if let Some((tx, mode, hand, friction)) = pending_mode_push {
+        if let Err(e) = send_mode_packet(&tx, mode, hand, friction) {
             log::warn!("mode push after save failed: {}", e);
         }
     }
@@ -146,7 +147,7 @@ fn get_profiles() -> Vec<settings::profiles::Profile> {
 fn push_mode(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(), String> {
     let s = state.lock().unwrap();
     if let Some(tx) = &s.udp_tx {
-        send_mode_packet(tx, s.config.mode, s.config.hand)?;
+        send_mode_packet(tx, s.config.mode, s.config.hand, s.config.trackball_friction)?;
     }
     Ok(())
 }
@@ -155,10 +156,14 @@ fn send_mode_packet(
     tx: &tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
     mode: InputMode,
     hand: Hand,
+    trackball_friction: f64,
 ) -> Result<(), String> {
     use crate::protocol::packets::{encode_header, packet_type, PacketHeader};
     let mode_byte: u8 = if mode == InputMode::Trackball { 1 } else { 0 };
     let hand_byte: u8 = if hand == Hand::Left { 1 } else { 0 };
+    // Centi-units (50–99 → 0.50–0.99); matches watch visual coast damping.
+    let friction_byte =
+        ((trackball_friction.clamp(0.5, 0.99) * 100.0).round() as u8).clamp(50, 99);
     let header = PacketHeader {
         seq: 0,
         packet_type: packet_type::CONFIG,
@@ -171,6 +176,7 @@ fn send_mode_packet(
     let mut packet = encode_header(&header).map_err(|e| format!("{:?}", e))?;
     packet.push(mode_byte);
     packet.push(hand_byte);
+    packet.push(friction_byte);
     tx.send(packet).map_err(|e| e.to_string())
 }
 
@@ -509,10 +515,10 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 let s = state.lock().unwrap();
                 s.udp_tx
                     .clone()
-                    .map(|tx| (tx, s.config.mode, s.config.hand))
+                    .map(|tx| (tx, s.config.mode, s.config.hand, s.config.trackball_friction))
             };
-            if let Some((tx, mode, hand)) = mode_push {
-                let _ = send_mode_packet(&tx, mode, hand);
+            if let Some((tx, mode, hand, friction)) = mode_push {
+                let _ = send_mode_packet(&tx, mode, hand, friction);
             }
         }
 
@@ -551,7 +557,11 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
 
             if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
                 s.kalman.reset();
-                s.trackball.stop();
+                // In trackball mode a FLING gesture may follow this touch-end; stopping here
+                // would cancel coasting immediately. New touch began stops inertia instead.
+                if s.config.mode != InputMode::Trackball {
+                    s.trackball.stop();
+                }
                 s.smoothed_dx = 0.0;
                 s.smoothed_dy = 0.0;
                 s.last_raw_x = 0.0;
@@ -587,6 +597,14 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
             let user_scale = s.config.sensitivity.max(0.05);
             dx *= user_scale;
             dy *= user_scale;
+
+            // Pressure 1–255 scales delta; 0 leaves gain off (e.g. trackpad sends no pressure).
+            let p = payload.pressure;
+            if p > 0 {
+                let gain = 0.4 + 0.6 * (p as f64 / 255.0);
+                dx *= gain;
+                dy *= gain;
+            }
 
             // Adaptive deadzone + adaptive low-pass:
             // - low speed: stronger filtering (less jitter)

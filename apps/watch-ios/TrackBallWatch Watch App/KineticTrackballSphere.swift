@@ -10,13 +10,11 @@ struct KineticTrackballSphere: View {
     var rotY: Double
     var isDragging: Bool
 
-    private var spinRing: Double { rotY }
-
     var body: some View {
         let d = max(diameter, 1)
-        // Tiny 2D parallax for “round” depth without 3D projection flattening the ball.
-        let parallaxX = CGFloat(sin(rotY * .pi / 180.0)) * d * 0.03
-        let parallaxY = CGFloat(sin(rotX * .pi / 180.0)) * d * 0.025
+        // Parallax: horizontal drag → rotY, vertical → rotX — both axes must read clearly on a circle.
+        let parallaxX = CGFloat(sin(rotY * .pi / 180.0)) * d * 0.10
+        let parallaxY = CGFloat(sin(rotX * .pi / 180.0)) * d * 0.10
 
         ZStack {
             Circle()
@@ -34,8 +32,10 @@ struct KineticTrackballSphere: View {
                     )
                 )
                 .overlay(specularHighlight(d: d, parallaxX: parallaxX, parallaxY: parallaxY))
-                .overlay(glossRing(d: d))
-                .overlay(causticBlob(d: d))
+                // Two concentric gloss rings: independent rotY (horizontal drag) and rotX (vertical drag).
+                .overlay(glossRing(d: d, rotationDegrees: rotY, lineWidthScale: 1.0))
+                .overlay(glossRing(d: d, rotationDegrees: rotX, lineWidthScale: 0.78))
+                .overlay(causticBlob(d: d, rotX: rotX, rotY: rotY))
                 .shadow(color: .black.opacity(isDragging ? 0.72 : 0.58), radius: isDragging ? 12 : 10, x: 2, y: isDragging ? 12 : 10)
         }
         .aspectRatio(1, contentMode: .fit)
@@ -62,7 +62,7 @@ struct KineticTrackballSphere: View {
     }
 
     @ViewBuilder
-    private func glossRing(d: CGFloat) -> some View {
+    private func glossRing(d: CGFloat, rotationDegrees: Double, lineWidthScale: CGFloat) -> some View {
         Circle()
             .stroke(
                 AngularGradient(
@@ -77,14 +77,16 @@ struct KineticTrackballSphere: View {
                     ]),
                     center: .center
                 ),
-                lineWidth: max(2.5, d * 0.038)
+                lineWidth: max(2.0, d * 0.038 * lineWidthScale)
             )
-            .rotationEffect(.degrees(spinRing))
+            .rotationEffect(.degrees(rotationDegrees))
     }
 
     @ViewBuilder
-    /// Soft highlight blob — kept circular so it never reads as a squashed “pancake”.
-    private func causticBlob(d: CGFloat) -> some View {
+    /// Soft highlight blob — kept circular; offset follows both spin axes.
+    private func causticBlob(d: CGFloat, rotX: Double, rotY: Double) -> some View {
+        let ox = CGFloat(sin(rotY * .pi / 180.0)) * d * 0.06
+        let oy = CGFloat(sin(rotX * .pi / 180.0)) * d * 0.06
         Circle()
             .fill(
                 LinearGradient(
@@ -97,7 +99,7 @@ struct KineticTrackballSphere: View {
                 )
             )
             .frame(width: d * 0.22, height: d * 0.22)
-            .offset(x: -d * 0.08, y: -d * 0.14)
+            .offset(x: -d * 0.08 + ox, y: -d * 0.14 + oy)
             .blur(radius: 1)
     }
 }
@@ -106,8 +108,8 @@ struct KineticTrackballSphere: View {
 #Preview {
     KineticTrackballSphere(
         diameter: 120,
-        rotX: 12,
-        rotY: -20,
+        rotX: 35,
+        rotY: -40,
         isDragging: true
     )
     .padding()

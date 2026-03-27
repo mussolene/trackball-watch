@@ -3,14 +3,13 @@ import WatchKit
 import Combine
 
 /// Virtual trackball for trackball mode.
-/// Displays a red 3D-looking sphere; drag to spin and fling it.
+/// Sphere sits bottom-trailing for thumb reach; coast damping matches desktop (`trackballFriction` from CONFIG).
 struct TrackballView: View {
     @EnvironmentObject var sessionManager: WatchSessionManager
 
     @State private var dragStart: CGPoint = .zero
     @State private var dragStartTime: Date = .distantPast
     @State private var isDragging = false
-    // Accumulated rotation offset for visual feedback
     @State private var rotX: Double = 0
     @State private var rotY: Double = 0
     @State private var angularVX: Double = 0
@@ -18,15 +17,17 @@ struct TrackballView: View {
     @State private var lastDragPoint: CGPoint = .zero
     @State private var lastTick: Date = .now
     @State private var lastTapAt: Date = .distantPast
+    /// 1–255 from drag speed; forwarded in TOUCH for host gain (trackpad path may keep 0).
+    @State private var pressureByte: UInt8 = 0
+
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
-    /// Angular damping per second when coasting (matches desktop trackball decay feel).
-    private let frictionPerSecond: Double = 0.12
 
     var body: some View {
         GeometryReader { geo in
             let ballDiameter = min(geo.size.width, geo.size.height) * 0.56
-            ZStack {
+            ZStack(alignment: .bottomTrailing) {
                 Color.clear
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
 
                 KineticTrackballSphere(
                     diameter: ballDiameter,
@@ -37,71 +38,78 @@ struct TrackballView: View {
                     .animation(isDragging ? nil : .easeOut(duration: 0.35), value: rotX)
                     .animation(isDragging ? nil : .easeOut(duration: 0.35), value: rotY)
                     .frame(width: ballDiameter, height: ballDiameter)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     .padding(8)
                     .contentShape(Circle())
                     .accessibilityLabel("Trackball")
                     .gesture(
                         DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                    .onChanged { value in
-                        if !isDragging {
-                            isDragging = true
-                            dragStart = value.location
-                            dragStartTime = .now
-                            lastDragPoint = value.location
-                            angularVX = 0
-                            angularVY = 0
-                            sendTouchBegan(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
-                            WKInterfaceDevice.current().play(.start)
-                        } else {
-                            let dx = value.location.x - lastDragPoint.x
-                            let dy = value.location.y - lastDragPoint.y
-                            lastDragPoint = value.location
-                            rotY += dx * 0.9
-                            rotX += -dy * 0.9
-                            angularVY = Double(dx) * 20.0
-                            angularVX = Double(-dy) * 20.0
-                            sendTouchMoved(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
-                        }
-                    }
-                    .onEnded { value in
-                        defer { isDragging = false }
-                        let dragDist = hypot(
-                            value.location.x - dragStart.x,
-                            value.location.y - dragStart.y
-                        )
-                        let dragDuration = Date().timeIntervalSince(dragStartTime)
-                        if dragDist < 8 && dragDuration < 0.28 {
-                            handleTap()
-                            sendTouchEnded(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
-                            return
-                        }
-                        // Fling: send velocity as fling gesture
-                        let vx = value.predictedEndLocation.x - value.location.x
-                        let vy = value.predictedEndLocation.y - value.location.y
-                        sendFling(vx: vx, vy: vy, in: geo.size)
-                        sendTouchEnded(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
-                        angularVY += Double(vx) * 3.0
-                        angularVX += Double(-vy) * 3.0
-                        WKInterfaceDevice.current().play(.directionUp)
-                    }
-            )
+                            .onChanged { value in
+                                if !isDragging {
+                                    isDragging = true
+                                    dragStart = value.location
+                                    dragStartTime = .now
+                                    lastDragPoint = value.location
+                                    angularVX = 0
+                                    angularVY = 0
+                                    pressureByte = 180
+                                    sendTouchBegan(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
+                                    WKInterfaceDevice.current().play(.start)
+                                } else {
+                                    let dx = value.location.x - lastDragPoint.x
+                                    let dy = value.location.y - lastDragPoint.y
+                                    lastDragPoint = value.location
+                                    rotY += dx * 0.9
+                                    rotX += -dy * 0.9
+                                    angularVY = Double(dx) * 20.0
+                                    angularVX = Double(-dy) * 20.0
+                                    let speed = hypot(dx, dy)
+                                    pressureByte = UInt8(clamping: Int(min(255, max(1, 24 + speed * 5.5))))
+                                    sendTouchMoved(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
+                                }
+                            }
+                            .onEnded { value in
+                                defer { isDragging = false }
+                                let dragDist = hypot(
+                                    value.location.x - dragStart.x,
+                                    value.location.y - dragStart.y
+                                )
+                                let dragDuration = Date().timeIntervalSince(dragStartTime)
+                                if dragDist < 8 && dragDuration < 0.28 {
+                                    handleTap()
+                                    sendTouchEnded(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
+                                    return
+                                }
+                                let vx = value.predictedEndLocation.x - value.location.x
+                                let vy = value.predictedEndLocation.y - value.location.y
+                                let pScale = max(0.35, min(1.75, CGFloat(pressureByte) / 128.0))
+                                sendFling(
+                                    vx: vx * pScale,
+                                    vy: vy * pScale,
+                                    in: CGSize(width: ballDiameter, height: ballDiameter)
+                                )
+                                sendTouchEnded(value.location, in: CGSize(width: ballDiameter, height: ballDiameter))
+                                angularVY += Double(vx) * 3.0 * Double(pScale)
+                                angularVX += Double(-vy) * 3.0 * Double(pScale)
+                                WKInterfaceDevice.current().play(.directionUp)
+                            }
+                    )
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             .onReceive(tick) { now in
                 let dt = max(0.0, min(0.05, now.timeIntervalSince(lastTick)))
                 lastTick = now
                 guard !isDragging else { return }
                 guard angularVX != 0 || angularVY != 0 else { return }
 
+                // Same as host `TrackballState::tick`: v *= friction once per ~60 Hz step.
+                let friction = sessionManager.trackballFriction
                 rotX += angularVX * dt
                 rotY += angularVY * dt
-
-                let damping = pow(frictionPerSecond, dt)
-                angularVX *= damping
-                angularVY *= damping
+                angularVX *= friction
+                angularVY *= friction
 
                 if abs(angularVX) < 0.4 { angularVX = 0 }
                 if abs(angularVY) < 0.4 { angularVY = 0 }
-            }
             }
         }
     }
@@ -133,7 +141,7 @@ struct TrackballView: View {
         let p = TBPPacket.touch(touchId: 0, phase: .began,
                                 x: normalize(pt.x, size: size.width),
                                 y: normalize(pt.y, size: size.height),
-                                pressure: 0)
+                                pressure: pressureByte)
         sessionManager.send(p)
     }
 
@@ -141,7 +149,7 @@ struct TrackballView: View {
         let p = TBPPacket.touch(touchId: 0, phase: .moved,
                                 x: normalize(pt.x, size: size.width),
                                 y: normalize(pt.y, size: size.height),
-                                pressure: 0)
+                                pressure: pressureByte)
         sessionManager.send(p)
     }
 
@@ -149,7 +157,7 @@ struct TrackballView: View {
         let p = TBPPacket.touch(touchId: 0, phase: .ended,
                                 x: normalize(pt.x, size: size.width),
                                 y: normalize(pt.y, size: size.height),
-                                pressure: 0)
+                                pressure: pressureByte)
         sessionManager.send(p)
     }
 

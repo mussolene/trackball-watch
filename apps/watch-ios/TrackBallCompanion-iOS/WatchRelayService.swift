@@ -86,8 +86,8 @@ final class WatchRelayService: NSObject, ObservableObject {
         heartbeatTimer?.invalidate()
 
         let relay = UDPRelay(host: desktop.host, port: desktop.port)
-        relay.onConfigPacket = { [weak self] modeByte, handByte in
-            self?.pushModeToWatch(modeByte, handByte: handByte)
+        relay.onConfigPacket = { [weak self] modeByte, handByte, frictionByte in
+            self?.pushModeToWatch(modeByte, handByte, frictionCenti: frictionByte)
         }
         relay.onStateChanged = { [weak self] state in
             guard let self else { return }
@@ -132,15 +132,16 @@ final class WatchRelayService: NSObject, ObservableObject {
     }
 
     /// Push mode change from desktop down to the Watch via WCSession.
-    func pushModeToWatch(_ modeByte: UInt8, handByte: UInt8? = nil) {
+    func pushModeToWatch(_ modeByte: UInt8, _ handByte: UInt8, frictionCenti: UInt8) {
         guard let session = wcSession,
               session.activationState == .activated,
               session.isReachable else { return }
         let modeString = modeByte == 1 ? "trackball" : "trackpad"
-        var payload: [String: Any] = ["mode": modeString]
-        if let handByte {
-            payload["hand"] = handByte == 1 ? "left" : "right"
-        }
+        let payload: [String: Any] = [
+            "mode": modeString,
+            "hand": handByte == 1 ? "left" : "right",
+            "friction": Double(frictionCenti) / 100.0,
+        ]
         session.sendMessage(payload, replyHandler: nil) { _ in
             // Non-critical — ignore errors
         }

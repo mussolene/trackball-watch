@@ -21,6 +21,8 @@ final class WatchSessionManager: NSObject, ObservableObject {
     @Published var connectionState: ConnectionState = .disconnected
     @Published var mode: InputMode = .trackpad
     @Published var hand: Handedness = .right
+    /// Host trackball friction (0.50–0.99); applied once per frame on watch coast, matching desktop.
+    @Published var trackballFriction: Double = 0.92
 
     private var wcSession: WCSession?
     private var sequenceNumber: UInt16 = 0
@@ -121,6 +123,10 @@ extension WatchSessionManager: WCSessionDelegate {
             }
             if let handStr = message["hand"] as? String {
                 self.hand = handStr == "left" ? .left : .right
+            }
+            if let raw = message["friction"],
+               let friction = (raw as? NSNumber)?.doubleValue ?? raw as? Double {
+                self.trackballFriction = min(0.99, max(0.5, friction))
             }
         }
     }

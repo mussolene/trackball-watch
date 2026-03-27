@@ -27,8 +27,8 @@ final class UDPRelay {
     private let maxPendingOutbound = 512
 
     /// Called on main thread when a CONFIG packet (type 0x12) is received.
-    /// Payload: mode byte + optional hand byte.
-    var onConfigPacket: ((UInt8, UInt8?) -> Void)?
+    /// Payload is fixed 3 bytes: mode, hand, friction (centi-units 50–99 → 0.50–0.99).
+    var onConfigPacket: ((UInt8, UInt8, UInt8) -> Void)?
     /// Called on main thread when UDP relay state changes.
     var onStateChanged: ((RelayState) -> Void)?
 
@@ -87,10 +87,11 @@ final class UDPRelay {
             if let data, data.count >= 9 {
                 // Header: [seq:2][type:1][flags:1][ts:4] = 8 bytes, payload starts at byte 8
                 let packetType = data[2]
-                if packetType == 0x12 { // CONFIG
+                if packetType == 0x12, data.count >= 11 { // CONFIG: 8-byte header + 3-byte payload
                     let modeByte = data[8]
-                    let handByte: UInt8? = data.count >= 10 ? data[9] : nil
-                    DispatchQueue.main.async { self?.onConfigPacket?(modeByte, handByte) }
+                    let handByte = data[9]
+                    let frictionByte = data[10]
+                    DispatchQueue.main.async { self?.onConfigPacket?(modeByte, handByte, frictionByte) }
                 }
             }
             if error == nil { self?.receiveLoop() } // continue receiving

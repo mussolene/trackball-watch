@@ -166,8 +166,8 @@ pub mod packet_type {
     pub const PONG: u8 = 0x21;
 }
 
-/// Packet type `0x12 CONFIG` — 1-byte payload: input mode.
-/// Sent desktop→phone→watch to sync mode changes.
+/// Packet type `0x12 CONFIG` — fixed 3-byte payload: mode (u8), hand (u8), friction centi-units (u8, 50–99).
+/// Sent desktop→phone→watch to sync mode and on-watch coast damping with the host.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ConfigMode {
