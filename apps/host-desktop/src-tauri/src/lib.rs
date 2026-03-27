@@ -194,7 +194,6 @@ pub fn run() {
             // Apply system dark/light theme to the webview window
             #[cfg(target_os = "macos")]
             {
-                use tauri::Theme;
                 if let Some(win) = app.get_webview_window("main") {
                     // Follow system appearance — None = auto
                     let _ = win.set_theme(None);
@@ -215,14 +214,13 @@ pub fn run() {
                 &[&show_qr_item, &settings_item, &disconnect_item, &quit],
             )?;
 
-            TrayIconBuilder::with_id("main-tray")
-                .icon(app.default_window_icon().cloned().unwrap_or_else(|| {
-                    tauri::image::Image::from_path(
-                        app.path().resource_dir().unwrap().join("icons/tray-icon.png")
-                    ).expect("tray icon")
-                }))
+            let mut tray_builder = TrayIconBuilder::with_id("main-tray");
+            if let Some(icon) = app.default_window_icon().cloned() {
+                tray_builder = tray_builder.icon(icon);
+            }
+            tray_builder
                 .icon_as_template(true)
-                .menu_on_left_click(true)
+                .show_menu_on_left_click(true)
                 .menu(&menu)
                 .tooltip("TrackBall Watch — Disconnected")
                 .on_menu_event(|app, event| match event.id.as_ref() {
