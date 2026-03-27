@@ -191,6 +191,16 @@ pub fn run() {
         .setup(move |app| {
             let app_handle = app.handle().clone();
 
+            // Apply system dark/light theme to the webview window
+            #[cfg(target_os = "macos")]
+            {
+                use tauri::Theme;
+                if let Some(win) = app.get_webview_window("main") {
+                    // Follow system appearance — None = auto
+                    let _ = win.set_theme(None);
+                }
+            }
+
             // ── Tray ──────────────────────────────────────────────────────────
             let quit =
                 MenuItem::with_id(app, "quit", "Quit TrackBall Watch", true, None::<&str>)?;
