@@ -16,10 +16,19 @@ struct MainView: View {
                     StatusRow(relay: relay)
                 }
 
-                // Paired desktop
-                if pairing.isPaired, let config = DesktopConfig.load() {
-                    Section("Connected Desktop") {
-                        PairedRow(config: config, pairing: pairing)
+                // Saved connections
+                if !pairing.connections.isEmpty {
+                    Section("My Desktops") {
+                        ForEach(pairing.connections) { config in
+                            SavedConnectionRow(
+                                config: config,
+                                isActive: config.deviceId == pairing.activeId,
+                                onActivate: { pairing.activate(config) }
+                            )
+                        }
+                        .onDelete { indexSet in
+                            indexSet.forEach { pairing.delete(pairing.connections[$0]) }
+                        }
                     }
                 }
 
@@ -118,25 +127,37 @@ struct StatusRow: View {
     }
 }
 
-// MARK: - Paired row
+// MARK: - Saved connection row
 
-struct PairedRow: View {
+struct SavedConnectionRow: View {
     let config: DesktopConfig
-    @ObservedObject var pairing: PairingService
+    let isActive: Bool
+    let onActivate: () -> Void
 
     var body: some View {
-        HStack {
-            Label(config.host, systemImage: "desktopcomputer")
+        HStack(spacing: 12) {
+            Image(systemName: isActive ? "desktopcomputer.fill" : "desktopcomputer")
+                .foregroundStyle(isActive ? .blue : .secondary)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(config.name.isEmpty ? config.host : config.name)
+                    .font(.subheadline)
+                    .fontWeight(isActive ? .semibold : .regular)
+                Text("\(config.host):\(config.port)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Spacer()
-            Text(":\(config.port)")
-                .foregroundStyle(.secondary)
-                .font(.caption)
-        }
-        .swipeActions {
-            Button("Unpair", role: .destructive) {
-                pairing.unpair()
+            if isActive {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else {
+                Button("Connect") { onActivate() }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
             }
         }
+        .padding(.vertical, 2)
     }
 }
 
@@ -224,11 +245,13 @@ struct ManualEntryView: View {
     @Binding var isPresented: Bool
     @State private var host = ""
     @State private var port = "47474"
+    @State private var name = ""
 
     var body: some View {
         NavigationStack {
             Form {
                 Section("Desktop Address") {
+                    TextField("Name (optional)", text: $name)
                     TextField("IP Address (e.g. 192.168.1.5)", text: $host)
                         .keyboardType(.decimalPad)
                     TextField("Port", text: $port)
@@ -244,7 +267,9 @@ struct ManualEntryView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Connect") {
                         guard let portVal = UInt16(port), !host.isEmpty else { return }
-                        let config = DesktopConfig(host: host, port: portVal, deviceId: UUID().uuidString)
+                        let displayName = name.isEmpty ? host : name
+                        let config = DesktopConfig(host: host, port: portVal,
+                                                   deviceId: UUID().uuidString, name: displayName)
                         Task {
                             await pairing.pair(with: config)
                             isPresented = false
