@@ -21,6 +21,10 @@ final class UDPRelay {
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "com.trackball.udp", qos: .userInteractive)
     private var seq: UInt16 = 0
+    /// True only after `NWConnection` reaches `.ready`. Watch packets often arrive earlier; without a queue they were dropped.
+    private var isPathReady = false
+    private var pendingOutbound: [Data] = []
+    private let maxPendingOutbound = 512
 
     /// Called on main thread when a CONFIG packet (type 0x12) is received.
     /// Payload: mode byte + optional hand byte.
@@ -45,22 +49,31 @@ final class UDPRelay {
         let hostCopy = resolvedHost, portCopy = port
         log.info("Connecting UDP to \(hostCopy, privacy: .public):\(portCopy, privacy: .public) (configured: \(self.host, privacy: .public))")
         conn.stateUpdateHandler = { [weak self] state in
+            guard let self else { return }
             switch state {
             case .setup, .preparing:
-                DispatchQueue.main.async { self?.onStateChanged?(.connecting) }
+                DispatchQueue.main.async { self.onStateChanged?(.connecting) }
             case .ready:
                 log.info("UDP ready → \(hostCopy, privacy: .public):\(portCopy, privacy: .public)")
-                DispatchQueue.main.async { self?.onStateChanged?(.ready) }
-                self?.sendHandshake()
-                self?.receiveLoop()
+                self.isPathReady = true
+                DispatchQueue.main.async { self.onStateChanged?(.ready) }
+                guard let conn = self.connection else { return }
+                log.info("Sending HANDSHAKE")
+                self.sendNow(self.buildPacket(type: 0x10, payload: Data()), connection: conn)
+                self.receiveLoop()
+                self.flushPendingOutbound()
             case .failed(let error):
+                self.isPathReady = false
+                self.pendingOutbound.removeAll()
                 log.error("UDP failed: \(error, privacy: .public)")
-                DispatchQueue.main.async { self?.onStateChanged?(.failed(error.localizedDescription)) }
+                DispatchQueue.main.async { self.onStateChanged?(.failed(error.localizedDescription)) }
             case .waiting(let error):
                 log.warning("UDP waiting: \(error, privacy: .public)")
-                DispatchQueue.main.async { self?.onStateChanged?(.waiting(error.localizedDescription)) }
+                DispatchQueue.main.async { self.onStateChanged?(.waiting(error.localizedDescription)) }
             case .cancelled:
-                DispatchQueue.main.async { self?.onStateChanged?(.cancelled) }
+                self.isPathReady = false
+                self.pendingOutbound.removeAll()
+                DispatchQueue.main.async { self.onStateChanged?(.cancelled) }
             default:
                 log.debug("UDP state: \(String(describing: state), privacy: .public)")
             }
@@ -85,16 +98,57 @@ final class UDPRelay {
     }
 
     func send(_ data: Data) {
-        connection?.send(content: data, completion: .contentProcessed { error in
+        queue.async { [weak self] in
+            guard let self else { return }
+            guard let conn = self.connection else {
+                log.warning("UDP send dropped: no connection (len=\(data.count))")
+                return
+            }
+            if !self.isPathReady {
+                self.enqueuePending(data)
+                return
+            }
+            self.sendNow(data, connection: conn)
+        }
+    }
+
+    private func enqueuePending(_ data: Data) {
+        if pendingOutbound.count >= maxPendingOutbound {
+            let drop = pendingOutbound.count - maxPendingOutbound + 1
+            pendingOutbound.removeFirst(drop)
+            log.warning("UDP pending queue overflow, dropped \(drop) older packets")
+        }
+        pendingOutbound.append(data)
+        log.debug("UDP queued packet until ready (pending=\(self.pendingOutbound.count), len=\(data.count))")
+    }
+
+    private func flushPendingOutbound() {
+        guard let conn = connection else { return }
+        guard !pendingOutbound.isEmpty else { return }
+        let batch = pendingOutbound
+        pendingOutbound.removeAll(keepingCapacity: true)
+        log.info("Flushing \(batch.count) UDP packets queued before ready")
+        for data in batch {
+            sendNow(data, connection: conn)
+        }
+    }
+
+    private func sendNow(_ data: Data, connection conn: NWConnection) {
+        conn.send(content: data, completion: .contentProcessed { error in
             if let error = error {
-                log.error("send failed: \(error, privacy: .public)")
+                log.error("UDP send failed: \(error, privacy: .public) len=\(data.count)")
             }
         })
     }
 
     func cancel() {
-        connection?.cancel()
-        connection = nil
+        queue.async { [weak self] in
+            guard let self else { return }
+            self.isPathReady = false
+            self.pendingOutbound.removeAll()
+            self.connection?.cancel()
+            self.connection = nil
+        }
         DispatchQueue.main.async { self.onStateChanged?(.cancelled) }
     }
 
@@ -103,8 +157,11 @@ final class UDPRelay {
     /// Send a HANDSHAKE packet to initiate a session on the desktop.
     /// Packet format: [seq:u16 LE][type:u8=0x10][flags:u8=0][timestamp_us:u32 LE]
     func sendHandshake() {
-        log.info("Sending HANDSHAKE")
-        send(buildPacket(type: 0x10, payload: Data()))
+        queue.async { [weak self] in
+            guard let self, let conn = self.connection, self.isPathReady else { return }
+            log.info("Sending HANDSHAKE")
+            self.sendNow(self.buildPacket(type: 0x10, payload: Data()), connection: conn)
+        }
     }
 
     /// Send a HEARTBEAT packet to keep the session alive.

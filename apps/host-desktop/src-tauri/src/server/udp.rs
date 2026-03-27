@@ -99,7 +99,19 @@ impl UdpServer {
             }
 
             if let Err(e) = self.handle_packet(data, peer).await {
-                log::debug!("packet handling error from {}: {}", peer, e);
+                let prefix: String = data
+                    .iter()
+                    .take(24)
+                    .map(|b| format!("{:02x}", b))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                log::warn!(
+                    "TBP packet error from {}: {} ({} bytes) prefix={}",
+                    peer,
+                    e,
+                    data.len(),
+                    prefix
+                );
             }
         }
     }

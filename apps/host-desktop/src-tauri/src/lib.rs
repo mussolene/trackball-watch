@@ -224,6 +224,26 @@ fn get_pairing_info(state: tauri::State<Arc<Mutex<AppState>>>) -> PairingInfo {
 pub fn run() {
     env_logger::init();
 
+    #[cfg(target_os = "macos")]
+    {
+        let exe = std::env::current_exe()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "(unknown path)".to_string());
+        let trusted = injector::macos::MacOSInjector::has_accessibility_permission();
+        log::info!(
+            "macOS input injection: Accessibility trusted={} for {}",
+            trusted,
+            exe
+        );
+        if !trusted {
+            log::warn!(
+                "Accessibility is off for this executable — cursor/clicks will not work. \
+                 System Settings → Privacy & Security → Accessibility → enable TrackBall Watch. \
+                 Note: dev builds (`target/debug/trackball-watch`) and the installed `.app` are separate entries; enable both if you use both."
+            );
+        }
+    }
+
     let config = AppConfig::load();
     let udp_port = config.udp_port;
     let device_id = config.device_id.clone();
