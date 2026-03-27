@@ -58,7 +58,8 @@ install-ios: ## Build & install iOS+Watch app on connected device (requires sign
 		-configuration Debug \
 		-allowProvisioningUpdates \
 		-allowProvisioningDeviceRegistration
-	@IPHONE_ID=$$(xcrun devicectl list devices 2>/dev/null | awk '/iPhone/{print $$3}' | head -1); \
+	@IPHONE_ID=$$(xcrun devicectl list devices 2>/dev/null \
+		| awk 'NR>2 && /connected/ && /iPhone/{print $$3}' | head -1); \
 	APP=$$(find ~/Library/Developer/Xcode/DerivedData/TrackBallWatch-*/Build/Products/Debug-iphoneos \
 		-maxdepth 1 -name "TrackBallCompanion-iOS.app" 2>/dev/null | head -1); \
 	echo "Installing $$APP on $$IPHONE_ID"; \

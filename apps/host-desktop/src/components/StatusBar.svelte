@@ -28,6 +28,9 @@
     margin-bottom: 8px;
     border-bottom: 1px solid #f0f0f0;
   }
+  @media (prefers-color-scheme: dark) {
+    .status-bar { border-bottom-color: #3a3a3c; }
+  }
 
   .dot {
     width: 8px;

@@ -113,12 +113,16 @@
 </main>
 
 <style>
+  :global(body) { background: #fff; color: #1a1a1a; }
+  @media (prefers-color-scheme: dark) {
+    :global(body) { background: #1c1c1e; color: #f2f2f7; }
+  }
+
   main {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     max-width: 400px;
     margin: 0 auto;
     padding: 16px;
-    color: #1a1a1a;
   }
 
   nav {
@@ -129,6 +133,9 @@
     padding-bottom: 8px;
     align-items: center;
   }
+  @media (prefers-color-scheme: dark) {
+    nav { border-bottom-color: #3a3a3c; }
+  }
 
   nav button {
     background: none;
@@ -138,6 +145,9 @@
     border-radius: 6px;
     font-size: 14px;
     color: #666;
+  }
+  @media (prefers-color-scheme: dark) {
+    nav button { color: #aeaeb2; }
   }
 
   nav button.active {
@@ -151,8 +161,9 @@
     font-size: 13px !important;
   }
 
-  .disconnect-btn:hover {
-    background: #fff0f0 !important;
+  .disconnect-btn:hover { background: #fff0f0 !important; }
+  @media (prefers-color-scheme: dark) {
+    .disconnect-btn:hover { background: #2c1a1a !important; }
   }
 
   .toast {
@@ -217,6 +228,9 @@
     margin: 16px 0;
     gap: 8px;
   }
+  @media (prefers-color-scheme: dark) {
+    .qr-placeholder { border-color: #48484a; }
+  }
 
   .qr-placeholder span {
     font-size: 18px;
@@ -224,6 +238,9 @@
   }
 
   .pairing-line { color: #666; }
+  @media (prefers-color-scheme: dark) {
+    .pairing-line { color: #aeaeb2; }
+  }
 
   .mono {
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

@@ -76,7 +76,7 @@ final class UDPRelay {
 
     private func buildPacket(type packetType: UInt8, payload: Data) -> Data {
         seq &+= 1
-        let timestampUs = UInt32(Date().timeIntervalSince1970 * 1_000_000) & 0xFFFF_FFFF
+        let timestampUs = UInt32(truncatingIfNeeded: UInt64(Date().timeIntervalSince1970 * 1_000_000))
         var data = Data(capacity: 8 + payload.count)
         data.appendLE(seq)
         data.append(packetType)

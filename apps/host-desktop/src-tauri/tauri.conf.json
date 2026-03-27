@@ -18,9 +18,8 @@
     ],
     "trayIcon": {
       "iconPath": "icons/icon.png",
-      "iconAsTemplate": false,
-      "menuOnLeftClick": false,
-      "title": "TrackBall Watch"
+      "iconAsTemplate": true,
+      "menuOnLeftClick": true
     },
     "security": {
       "csp": null
