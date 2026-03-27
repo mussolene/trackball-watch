@@ -6,7 +6,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc, Mutex};
 
 use crate::protocol::packets::{
     decode_crown, decode_gesture, decode_header, decode_touch, packet_type, CrownPayload,
@@ -36,14 +36,20 @@ pub struct UdpServer {
     port: u16,
     connection_manager: Arc<Mutex<ConnectionManager>>,
     event_cb: Option<EventCallback>,
+    /// Channel for sending raw packets back to the connected peer.
+    outbound_rx: Option<mpsc::UnboundedReceiver<Vec<u8>>>,
+    pub outbound_tx: Option<mpsc::UnboundedSender<Vec<u8>>>,
 }
 
 impl UdpServer {
     pub fn new(port: u16) -> Self {
+        let (tx, rx) = mpsc::unbounded_channel();
         Self {
             port,
             connection_manager: Arc::new(Mutex::new(ConnectionManager::new())),
             event_cb: None,
+            outbound_rx: Some(rx),
+            outbound_tx: Some(tx),
         }
     }
 
@@ -53,22 +59,32 @@ impl UdpServer {
     }
 
     /// Run the UDP server (blocking — run in a tokio task).
-    pub async fn run(&self) -> anyhow::Result<()> {
+    pub async fn run(&mut self) -> anyhow::Result<()> {
         let bind_addr = format!("0.0.0.0:{}", self.port);
         let socket = UdpSocket::bind(&bind_addr).await?;
         log::info!("TBP UDP server listening on {}", bind_addr);
+        let mut outbound_rx = self.outbound_rx.take();
 
         let mut buf = vec![0u8; MAX_PACKET_SIZE];
+        let mut current_peer: Option<SocketAddr> = None;
 
         loop {
-            let (len, peer) = match socket.recv_from(&mut buf).await {
-                Ok(r) => r,
-                Err(e) => {
-                    log::error!("UDP recv error: {}", e);
+            let (len, peer) = tokio::select! {
+                result = socket.recv_from(&mut buf) => match result {
+                    Ok(r) => r,
+                    Err(e) => { log::error!("UDP recv error: {}", e); continue; }
+                },
+                Some(data) = async {
+                    if let Some(rx) = outbound_rx.as_mut() { rx.recv().await } else { None }
+                } => {
+                    if let Some(dest) = current_peer {
+                        let _ = socket.send_to(&data, dest).await;
+                    }
                     continue;
                 }
             };
 
+            current_peer = Some(peer);
             let data = &buf[..len];
             log::debug!("UDP recv {} bytes from {}", len, peer);
 

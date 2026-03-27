@@ -27,6 +27,8 @@ struct AppState {
     last_touch_x: f64,
     last_touch_y: f64,
     connected_peer: Option<ConnectedPeer>,
+    /// Send raw packets to the connected peer via the UDP server socket.
+    udp_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
 }
 
 impl AppState {
@@ -44,6 +46,7 @@ impl AppState {
             last_touch_x: 0.0,
             last_touch_y: 0.0,
             connected_peer: None,
+            udp_tx: None,
         }
     }
 }
@@ -115,6 +118,28 @@ fn get_profiles() -> Vec<settings::profiles::Profile> {
     settings::profiles::Profile::builtin_profiles()
 }
 
+#[tauri::command]
+fn push_mode(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(), String> {
+    use crate::protocol::packets::{encode_header, packet_type, PacketHeader};
+    let s = state.lock().unwrap();
+    let mode_byte: u8 = if s.config.mode == InputMode::Trackball { 1 } else { 0 };
+    let header = PacketHeader {
+        seq: 0,
+        packet_type: packet_type::CONFIG,
+        flags: 0,
+        timestamp_us: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| (d.as_micros() & 0xFFFF_FFFF) as u32)
+            .unwrap_or(0),
+    };
+    let mut packet = encode_header(&header).map_err(|e| format!("{:?}", e))?;
+    packet.push(mode_byte);
+    if let Some(tx) = &s.udp_tx {
+        tx.send(packet).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[derive(serde::Serialize)]
 struct PairingInfo {
     pairing_url: String,
@@ -161,6 +186,7 @@ pub fn run() {
             disconnect_device,
             get_profiles,
             get_pairing_info,
+            push_mode,
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
@@ -229,6 +255,10 @@ pub fn run() {
                         None
                     };
                     let mut server = UdpServer::new(udp_port);
+                    // Share outbound sender with AppState so push_mode can use it
+                    if let Some(tx) = server.outbound_tx.clone() {
+                        state_for_thread.lock().unwrap().udp_tx = Some(tx);
+                    }
                     server.on_event(Arc::new(move |event| {
                         handle_input_event(event, &state_for_thread, &handle_for_thread);
                     }));

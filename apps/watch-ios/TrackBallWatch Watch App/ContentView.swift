@@ -18,15 +18,15 @@ struct ContentView: View {
 
                 Divider()
 
-                // Mode indicator
-                Text(sessionManager.mode == .trackpad ? "Trackpad" : "Trackball")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-
-                // Main touch surface
-                InputCaptureView()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black.opacity(0.01)) // required for gesture recognition
+                // Main touch surface — switches between trackpad and trackball
+                if sessionManager.mode == .trackball {
+                    TrackballView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    InputCaptureView()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.black.opacity(0.01))
+                }
             }
             .padding(4)
             .navigationTitle("TrackBall")

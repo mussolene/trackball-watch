@@ -1,11 +1,18 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
+  import { invoke } from '@tauri-apps/api/core';
 
   export let config: any;
   const dispatch = createEventDispatcher();
 
   function save() {
     dispatch('save');
+  }
+
+  function setMode(mode: string) {
+    config.mode = mode;
+    save();
+    invoke('push_mode').catch(() => {});
   }
 
   $: sensitivityPct = Math.round(config?.sensitivity * 100) ?? 100;
@@ -17,13 +24,13 @@
     <div class="button-group">
       <button
         class:active={config.mode === 'trackpad'}
-        on:click={() => { config.mode = 'trackpad'; save(); }}
+        on:click={() => setMode('trackpad')}
       >
         Trackpad
       </button>
       <button
         class:active={config.mode === 'trackball'}
-        on:click={() => { config.mode = 'trackball'; save(); }}
+        on:click={() => setMode('trackball')}
       >
         Trackball
       </button>

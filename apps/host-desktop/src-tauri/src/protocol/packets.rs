@@ -161,8 +161,25 @@ pub mod packet_type {
     pub const CROWN: u8 = 0x03;
     pub const HANDSHAKE: u8 = 0x10;
     pub const HEARTBEAT: u8 = 0x11;
+    pub const CONFIG: u8 = 0x12;
     pub const PING: u8 = 0x20;
     pub const PONG: u8 = 0x21;
+}
+
+/// Packet type `0x12 CONFIG` — 1-byte payload: input mode.
+/// Sent desktop→phone→watch to sync mode changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum ConfigMode {
+    Trackpad = 0,
+    Trackball = 1,
+}
+
+impl TryFrom<u8> for ConfigMode {
+    type Error = u8;
+    fn try_from(v: u8) -> Result<Self, Self::Error> {
+        match v { 0 => Ok(Self::Trackpad), 1 => Ok(Self::Trackball), other => Err(other) }
+    }
 }
 
 // ── Framed packet ─────────────────────────────────────────────────────────────

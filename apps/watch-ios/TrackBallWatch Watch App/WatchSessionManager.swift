@@ -86,6 +86,14 @@ extension WatchSessionManager: WCSessionDelegate {
             connectionState = session.isReachable ? .connected : .connecting
         }
     }
+
+    /// Receive mode push from iPhone (originated from desktop CONFIG packet).
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        guard let modeStr = message["mode"] as? String else { return }
+        Task { @MainActor in
+            self.mode = modeStr == "trackball" ? .trackball : .trackpad
+        }
+    }
 }
 
 // WKInterfaceDevice extension to suppress warnings

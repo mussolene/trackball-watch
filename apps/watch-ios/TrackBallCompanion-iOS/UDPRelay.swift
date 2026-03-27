@@ -5,12 +5,16 @@ import OSLog
 private let log = Logger(subsystem: "com.trackball-watch.app", category: "UDPRelay")
 
 /// UDP client that sends TBP packets to the desktop host.
+/// Also receives inbound CONFIG packets from desktop to sync mode changes.
 final class UDPRelay {
     private let host: String
     private let port: UInt16
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "com.trackball.udp", qos: .userInteractive)
     private var seq: UInt16 = 0
+
+    /// Called on main thread when a CONFIG packet (type 0x12) is received.
+    var onConfigPacket: ((UInt8) -> Void)?
 
     init(host: String, port: UInt16) {
         self.host = host
@@ -32,6 +36,7 @@ final class UDPRelay {
             case .ready:
                 log.info("UDP ready → \(hostCopy, privacy: .public):\(portCopy, privacy: .public)")
                 self?.sendHandshake()
+                self?.receiveLoop()
             case .failed(let error):
                 log.error("UDP failed: \(error, privacy: .public)")
             case .waiting(let error):
@@ -42,6 +47,20 @@ final class UDPRelay {
         }
         conn.start(queue: queue)
         connection = conn
+    }
+
+    private func receiveLoop() {
+        connection?.receive(minimumIncompleteLength: 1, maximumLength: 1500) { [weak self] data, _, _, error in
+            if let data, data.count >= 9 {
+                // Header: [seq:2][type:1][flags:1][ts:4] = 8 bytes, payload starts at byte 8
+                let packetType = data[2]
+                if packetType == 0x12 { // CONFIG
+                    let modeByte = data[8]
+                    DispatchQueue.main.async { self?.onConfigPacket?(modeByte) }
+                }
+            }
+            if error == nil { self?.receiveLoop() } // continue receiving
+        }
     }
 
     func send(_ data: Data) {
