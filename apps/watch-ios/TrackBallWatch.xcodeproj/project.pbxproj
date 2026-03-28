@@ -9,7 +9,6 @@
 /* Begin PBXBuildFile section */
 		020EB9D75B16CFC5E45B172F /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 0A0CA93F6B7DEB7BF015F5E8 /* Assets.xcassets */; };
 		11223344556677889900AA01 /* HostPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22334455667788990011BB01 /* HostPickerView.swift */; };
-		AA11BB22CC33DD44EE550001 /* WatchBonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD44EE55FF660001 /* WatchBonjourBrowser.swift */; };
 		CC33DD44EE55FF6600110001 /* DiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD44EE55FF66001122330001 /* DiscoveryView.swift */; };
 		188DA5CED0661A729B20623A /* GestureRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5444A250AF2638BCF389E666 /* GestureRecognizer.swift */; };
 		2262CB46F431C3BF6B939C4B /* TrackBallWatch-watchOS.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = CA889BF8D52AD270939911AB /* TrackBallWatch-watchOS.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -70,7 +69,6 @@
 		0A0CA93F6B7DEB7BF015F5E8 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		13E0FACA0F09632816FFF1E4 /* UDPRelay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UDPRelay.swift; sourceTree = "<group>"; };
 		22334455667788990011BB01 /* HostPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostPickerView.swift; sourceTree = "<group>"; };
-		BB22CC33DD44EE55FF660001 /* WatchBonjourBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBonjourBrowser.swift; sourceTree = "<group>"; };
 		DD44EE55FF66001122330001 /* DiscoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryView.swift; sourceTree = "<group>"; };
 		3C2CA0A4FFFB8ED2776BFAE2 /* WatchRelayService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchRelayService.swift; sourceTree = "<group>"; };
 		3D9ABBC53853D9B8751E0D20 /* TrackBallCompanion-iOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "TrackBallCompanion-iOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -130,7 +128,6 @@
 				DD22EE33FF44AA55BB66CC01 /* WatchUDPTransport.swift */,
 				FF44AA55BB66CC11DD22EE01 /* HostStore.swift */,
 				22334455667788990011BB01 /* HostPickerView.swift */,
-				BB22CC33DD44EE55FF660001 /* WatchBonjourBrowser.swift */,
 				DD44EE55FF66001122330001 /* DiscoveryView.swift */,
 				EE55FF66001122334455AA01 /* TrackBallWatch.entitlements */,
 				64DF2F8D3118E168DF4748B6 /* Tests */,
@@ -335,7 +332,6 @@
 				CC11DD22EE33FF44AA55BB01 /* WatchUDPTransport.swift in Sources */,
 				EE33FF44AA55BB66CC11DD01 /* HostStore.swift in Sources */,
 				11223344556677889900AA01 /* HostPickerView.swift in Sources */,
-				AA11BB22CC33DD44EE550001 /* WatchBonjourBrowser.swift in Sources */,
 				CC33DD44EE55FF6600110001 /* DiscoveryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

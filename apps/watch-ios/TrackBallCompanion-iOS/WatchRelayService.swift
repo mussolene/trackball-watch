@@ -272,6 +272,11 @@ extension WatchRelayService: WCSessionDelegate {
                     self.switchDesktop(step: 1)
                 case "prev_host":
                     self.switchDesktop(step: -1)
+                case "scan":
+                    // Watch asked for a fresh scan — restart Bonjour browser
+                    self.bonjourBrowser?.stop()
+                    self.bonjourBrowser?.start()
+                    self.pushHostListToWatch()
                 default:
                     break
                 }

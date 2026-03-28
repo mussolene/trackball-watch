@@ -218,6 +218,12 @@ final class WatchSessionManager: NSObject, ObservableObject {
 
     // MARK: - Mode
 
+    /// Ask the iPhone companion to run a fresh Bonjour scan and push results.
+    func requestPhoneScan() {
+        guard let session = wcSession, session.activationState == .activated, session.isReachable else { return }
+        session.sendMessage(["cmd": "scan"], replyHandler: nil, errorHandler: nil)
+    }
+
     func toggleMode() {
         mode = (mode == .trackpad) ? .trackball : .trackpad
         WKInterfaceDevice.current().play(.click)
