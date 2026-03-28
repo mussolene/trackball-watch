@@ -29,6 +29,9 @@ final class UDPRelay {
     /// Called on main thread when a CONFIG packet (type 0x12) is received.
     /// Payload is fixed 3 bytes: mode, hand, friction (centi-units 50–99 → 0.50–0.99).
     var onConfigPacket: ((UInt8, UInt8, UInt8) -> Void)?
+    /// Called on main thread when a STATE_FEEDBACK packet (type 0x13) is received.
+    /// Parameters: isCoasting, vx (pixels/frame), vy (pixels/frame).
+    var onStateFeedback: ((Bool, Double, Double) -> Void)?
     /// Called on main thread when UDP relay state changes.
     var onStateChanged: ((RelayState) -> Void)?
 
@@ -92,6 +95,14 @@ final class UDPRelay {
                     let handByte = data[9]
                     let frictionByte = data[10]
                     DispatchQueue.main.async { self?.onConfigPacket?(modeByte, handByte, frictionByte) }
+                }
+                if packetType == 0x13, data.count >= 13 { // STATE_FEEDBACK: header(8) + coasting(1) + vx_fp(2) + vy_fp(2)
+                    let isCoasting = data[8] != 0
+                    let vxFP = Int16(bitPattern: UInt16(data[9]) | (UInt16(data[10]) << 8))
+                    let vyFP = Int16(bitPattern: UInt16(data[11]) | (UInt16(data[12]) << 8))
+                    let vx = Double(vxFP) / 64.0
+                    let vy = Double(vyFP) / 64.0
+                    DispatchQueue.main.async { self?.onStateFeedback?(isCoasting, vx, vy) }
                 }
             }
             if error == nil { self?.receiveLoop() } // continue receiving

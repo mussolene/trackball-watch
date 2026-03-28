@@ -14,6 +14,7 @@ use tauri::{
 };
 
 use engine::kalman::{Kalman2D, KalmanConfig};
+use engine::one_euro::OneEuroFilter;
 use engine::trackball::TrackballState;
 use protocol::packets::{GestureType, TouchPhase};
 use server::udp::{InputEvent, UdpServer};
@@ -31,6 +32,14 @@ struct AppState {
     last_touch_y: f64,
     smoothed_dx: f64,
     smoothed_dy: f64,
+    /// One-Euro filters for dx/dy smoothing (replace adaptive EMA).
+    one_euro_dx: OneEuroFilter,
+    one_euro_dy: OneEuroFilter,
+    /// Sub-pixel fractional accumulator — prevents rounding loss at low speeds.
+    frac_x: f64,
+    frac_y: f64,
+    /// Counter for throttling STATE_FEEDBACK packets (~10 Hz = every 6 coast frames).
+    feedback_frame_count: u8,
     connected_peer: Option<ConnectedPeer>,
     /// Send raw packets to the connected peer via the UDP server socket.
     udp_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
@@ -44,6 +53,18 @@ impl AppState {
             r_noise: config.kalman_r_noise,
         });
         let trackball = TrackballState::new(config.trackball_friction, 0.5);
+        let one_euro_dx = OneEuroFilter::new(
+            60.0,
+            config.one_euro_min_cutoff,
+            config.one_euro_beta,
+            1.0,
+        );
+        let one_euro_dy = OneEuroFilter::new(
+            60.0,
+            config.one_euro_min_cutoff,
+            config.one_euro_beta,
+            1.0,
+        );
         Self {
             config,
             kalman,
@@ -54,6 +75,11 @@ impl AppState {
             last_touch_y: 0.0,
             smoothed_dx: 0.0,
             smoothed_dy: 0.0,
+            one_euro_dx,
+            one_euro_dy,
+            frac_x: 0.0,
+            frac_y: 0.0,
+            feedback_frame_count: 0,
             connected_peer: None,
             udp_tx: None,
         }
@@ -106,6 +132,28 @@ fn save_config(config: AppConfig, state: tauri::State<Arc<Mutex<AppState>>>) -> 
         }
     }
     Ok(())
+}
+
+/// Returns true if macOS Accessibility permission is granted.
+#[tauri::command]
+fn check_accessibility() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        injector::macos::MacOSInjector::has_accessibility_permission()
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+/// Open System Settings → Accessibility so user can grant permission.
+#[tauri::command]
+fn open_accessibility_settings() {
+    #[cfg(target_os = "macos")]
+    {
+        injector::macos::MacOSInjector::open_accessibility_settings();
+    }
 }
 
 #[tauri::command]
@@ -177,6 +225,37 @@ fn send_mode_packet(
     packet.push(mode_byte);
     packet.push(hand_byte);
     packet.push(friction_byte);
+    tx.send(packet).map_err(|e| e.to_string())
+}
+
+/// Send STATE_FEEDBACK (0x13) packet to the watch at ~10 Hz during coasting.
+/// Payload: is_coasting(u8) + vx_fp(i16 LE) + vy_fp(i16 LE) + reserved(4 bytes).
+fn send_state_feedback(
+    tx: &tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
+    is_coasting: bool,
+    vx: f64,
+    vy: f64,
+) -> Result<(), String> {
+    use crate::protocol::packets::{encode_header, packet_type, PacketHeader};
+    let header = PacketHeader {
+        seq: 0,
+        packet_type: packet_type::STATE_FEEDBACK,
+        flags: 0,
+        timestamp_us: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| (d.as_micros() & 0xFFFF_FFFF) as u32)
+            .unwrap_or(0),
+    };
+    let mut packet = encode_header(&header).map_err(|e| format!("{:?}", e))?;
+    // is_coasting byte
+    packet.push(if is_coasting { 1u8 } else { 0u8 });
+    // vx as fixed-point i16 (velocity × 64), little-endian
+    let vx_fp = (vx * 64.0).clamp(-32767.0, 32767.0) as i16;
+    let vy_fp = (vy * 64.0).clamp(-32767.0, 32767.0) as i16;
+    packet.extend_from_slice(&vx_fp.to_le_bytes());
+    packet.extend_from_slice(&vy_fp.to_le_bytes());
+    // 4 reserved bytes
+    packet.extend_from_slice(&[0u8; 4]);
     tx.send(packet).map_err(|e| e.to_string())
 }
 
@@ -267,6 +346,8 @@ pub fn run() {
             get_profiles,
             get_pairing_info,
             push_mode,
+            check_accessibility,
+            open_accessibility_settings,
         ])
         .setup(move |app| {
             let app_handle = app.handle().clone();
@@ -471,19 +552,42 @@ fn trackball_coast_step(state: &Arc<Mutex<AppState>>) {
     if s.config.mode != InputMode::Trackball || !s.trackball.coasting {
         return;
     }
-    let (dx, dy) = s.trackball.tick();
+    let (dx, dy) = s.trackball.tick(1.0 / 60.0);
     if dx == 0.0 && dy == 0.0 {
+        // Coasting just stopped — send one final feedback so watch stops animating
+        if let Some(tx) = s.udp_tx.clone() {
+            drop(s);
+            let _ = send_state_feedback(&tx, false, 0.0, 0.0);
+        }
         return;
     }
     let user_scale = s.config.sensitivity.max(0.05);
     let cfg = s.config.accel;
+    let vx = s.trackball.vx;
+    let vy = s.trackball.vy;
+    let is_coasting = s.trackball.coasting;
+    let (sx, sy) = engine::accel::apply_curve_2d(dx * user_scale, dy * user_scale, &cfg);
+    s.frac_x += sx;
+    s.frac_y += sy;
+    let ix = s.frac_x as i64;
+    let iy = s.frac_y as i64;
+    s.frac_x -= ix as f64;
+    s.frac_y -= iy as f64;
+    // Throttle STATE_FEEDBACK to ~10 Hz (every 6 frames at 60 Hz)
+    s.feedback_frame_count = s.feedback_frame_count.wrapping_add(1);
+    let should_send_feedback = s.feedback_frame_count % 6 == 0;
+    let udp_tx = if should_send_feedback { s.udp_tx.clone() } else { None };
     drop(s);
     let injector = match injector::create_injector() {
         Ok(i) => i,
         Err(_) => return,
     };
-    let (sx, sy) = engine::accel::apply_curve_2d(dx * user_scale, dy * user_scale, &cfg);
-    let _ = injector.move_relative(sx, sy);
+    if ix != 0 || iy != 0 {
+        let _ = injector.move_relative(ix as f64, iy as f64);
+    }
+    if let Some(tx) = udp_tx {
+        let _ = send_state_feedback(&tx, is_coasting, vx, vy);
+    }
 }
 
 // ── Input event handler ───────────────────────────────────────────────────────
@@ -531,6 +635,10 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 s.trackball.stop();
                 s.smoothed_dx = 0.0;
                 s.smoothed_dy = 0.0;
+                s.one_euro_dx.reset();
+                s.one_euro_dy.reset();
+                s.frac_x = 0.0;
+                s.frac_y = 0.0;
                 s.last_raw_x = 0.0;
                 s.last_raw_y = 0.0;
             }
@@ -581,6 +689,10 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 s.last_touch_y = y;
                 s.smoothed_dx = 0.0;
                 s.smoothed_dy = 0.0;
+                s.one_euro_dx.reset();
+                s.one_euro_dy.reset();
+                s.frac_x = 0.0;
+                s.frac_y = 0.0;
                 return;
             }
 
@@ -606,17 +718,22 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 dy *= gain;
             }
 
-            // Adaptive deadzone + adaptive low-pass:
-            // - low speed: stronger filtering (less jitter)
-            // - high speed: lighter filtering (better responsiveness)
+            // Adaptive deadzone:
+            // - Trackpad: heavier deadzone to suppress finger contact noise
+            // - Trackball: minimal deadzone; One-Euro handles jitter naturally
             const MAX_DELTA: f64 = 8000.0;
             let speed = (dx * dx + dy * dy).sqrt();
-            let jitter_deadzone = if speed < 120.0 {
-                18.0
-            } else if speed < 420.0 {
-                10.0
+            let jitter_deadzone = if s.config.mode == InputMode::Trackpad {
+                if speed < 120.0 {
+                    18.0
+                } else if speed < 420.0 {
+                    10.0
+                } else {
+                    4.0
+                }
             } else {
-                4.0
+                // Trackball: only suppress digitizer noise floor
+                if speed < 60.0 { 2.0 } else { 0.0 }
             };
 
             if dx.abs() < jitter_deadzone {
@@ -631,26 +748,27 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
             dx = dx.clamp(-MAX_DELTA, MAX_DELTA);
             dy = dy.clamp(-MAX_DELTA, MAX_DELTA);
 
-            let alpha = if speed < 120.0 {
-                0.28
-            } else if speed < 700.0 {
-                0.48
-            } else {
-                0.74
-            };
-            s.smoothed_dx += alpha * (dx - s.smoothed_dx);
-            s.smoothed_dy += alpha * (dy - s.smoothed_dy);
-            dx = s.smoothed_dx;
-            dy = s.smoothed_dy;
+            // One-Euro filter: adapts cutoff based on signal derivative.
+            // Low speed → min_cutoff (heavy smoothing); high speed → raises cutoff (low lag).
+            dx = s.one_euro_dx.filter(dx);
+            dy = s.one_euro_dy.filter(dy);
 
             if dx.abs() < 0.5 && dy.abs() < 0.5 {
                 return;
             }
 
             let cfg = s.config.accel;
-            drop(s);
             let (sx, sy) = engine::accel::apply_curve_2d(dx, dy, &cfg);
-            let _ = injector.move_relative(sx, sy);
+            s.frac_x += sx;
+            s.frac_y += sy;
+            let ix = s.frac_x as i64;
+            let iy = s.frac_y as i64;
+            s.frac_x -= ix as f64;
+            s.frac_y -= iy as f64;
+            drop(s);
+            if ix != 0 || iy != 0 {
+                let _ = injector.move_relative(ix as f64, iy as f64);
+            }
         }
 
         InputEvent::Gesture(_, payload) => {

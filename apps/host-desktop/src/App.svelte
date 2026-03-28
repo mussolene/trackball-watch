@@ -31,6 +31,19 @@
   let loadError: string | null = null;
   let toast: string | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
+  /** macOS Accessibility permission state. Optimistic default; checked on mount. */
+  let hasAccessibility = true;
+  let accessibilityCheckInterval: ReturnType<typeof setInterval> | undefined;
+
+  async function checkAccessibility() {
+    try {
+      hasAccessibility = await invoke<boolean>('check_accessibility');
+    } catch { /* ignore on non-macOS */ }
+  }
+
+  async function grantAccessibility() {
+    try { await invoke('open_accessibility_settings'); } catch {}
+  }
 
   function showToast(msg: string) {
     clearTimeout(toastTimer);
@@ -120,6 +133,16 @@
       });
 
       await loadInitialData();
+      await checkAccessibility();
+      if (!hasAccessibility) {
+        accessibilityCheckInterval = setInterval(async () => {
+          await checkAccessibility();
+          if (hasAccessibility && accessibilityCheckInterval) {
+            clearInterval(accessibilityCheckInterval);
+            accessibilityCheckInterval = undefined;
+          }
+        }, 3000);
+      }
 
       // Event-driven status — no polling needed
       unlistenStatus = await listen<ConnectionStatus>('connection_status_changed', (event) => {
@@ -146,6 +169,7 @@
       if (mqListener) {
         window.matchMedia('(prefers-color-scheme: dark)').removeEventListener('change', mqListener);
       }
+      if (accessibilityCheckInterval) clearInterval(accessibilityCheckInterval);
     };
   });
 
@@ -178,6 +202,13 @@
 </script>
 
 <main>
+  {#if !hasAccessibility}
+    <div class="accessibility-banner">
+      <span>⚠ Accessibility permission required for cursor control.</span>
+      <button class="grant-btn" on:click={grantAccessibility}>Open Settings</button>
+    </div>
+  {/if}
+
   {#if toast}
     <div class="toast" class:toast-connected={connectionStatus.state === 'connected'}>
       {toast}
@@ -237,16 +268,23 @@
   :global(body),
   :global(#app) {
     height: 100%;
+    background: #fff;
+  }
+
+  :global(html[data-theme="dark"]),
+  :global(html[data-theme="dark"] body),
+  :global(html[data-theme="dark"] #app) {
+    background: #1c1c1e;
+    color: #f2f2f7;
   }
 
   :global(body) {
     margin: 0;
-    background: #fff;
+    background: inherit;
     color: #1a1a1a;
   }
 
   :global(html[data-theme="dark"] body) {
-    background: #1c1c1e;
     color: #f2f2f7;
   }
 
@@ -414,6 +452,36 @@
     text-align: center;
     word-break: break-all;
   }
+
+  .accessibility-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(255, 159, 10, 0.15);
+    border: 1px solid rgba(255, 159, 10, 0.5);
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: #c67b00;
+    gap: 12px;
+  }
+  :global(html[data-theme="dark"]) .accessibility-banner {
+    color: #ff9f0a;
+    background: rgba(255, 159, 10, 0.1);
+    border-color: rgba(255, 159, 10, 0.35);
+  }
+
+  .grant-btn {
+    flex-shrink: 0;
+    border: 1px solid currentColor;
+    background: none;
+    color: inherit;
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .grant-btn:hover { opacity: 0.75; }
 
   .host-list {
     display: flex;

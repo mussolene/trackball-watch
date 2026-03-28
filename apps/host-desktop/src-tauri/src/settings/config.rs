@@ -18,6 +18,10 @@ pub struct AppConfig {
     pub kalman_q_vel: f64,
     pub kalman_r_noise: f64,
     pub trackball_friction: f64,
+    /// One-Euro filter: minimum cutoff frequency Hz (smoothing at rest).
+    pub one_euro_min_cutoff: f64,
+    /// One-Euro filter: speed coefficient (higher = less lag during fast motion).
+    pub one_euro_beta: f64,
     pub udp_port: u16,
     pub device_id: String,
     pub start_minimized: bool,
@@ -51,6 +55,8 @@ impl Default for AppConfig {
             kalman_q_vel: 1.0,
             kalman_r_noise: 0.5,
             trackball_friction: 0.92,
+            one_euro_min_cutoff: 1.0,
+            one_euro_beta: 0.007,
             udp_port: 47474,
             device_id: String::new(),
             start_minimized: true,

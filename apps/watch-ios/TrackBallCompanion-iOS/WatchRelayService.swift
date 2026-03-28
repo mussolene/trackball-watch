@@ -89,6 +89,9 @@ final class WatchRelayService: NSObject, ObservableObject {
         relay.onConfigPacket = { [weak self] modeByte, handByte, frictionByte in
             self?.pushModeToWatch(modeByte, handByte, frictionCenti: frictionByte)
         }
+        relay.onStateFeedback = { [weak self] isCoasting, vx, vy in
+            self?.pushStateFeedbackToWatch(isCoasting: isCoasting, vx: vx, vy: vy)
+        }
         relay.onStateChanged = { [weak self] state in
             guard let self else { return }
             switch state {
@@ -141,6 +144,19 @@ final class WatchRelayService: NSObject, ObservableObject {
             "mode": modeString,
             "hand": handByte == 1 ? "left" : "right",
             "friction": Double(frictionCenti) / 100.0,
+        ]
+        session.sendMessage(payload, replyHandler: nil) { _ in
+            // Non-critical — ignore errors
+        }
+    }
+
+    /// Push desktop physics state to the Watch via WCSession (non-critical, best-effort).
+    func pushStateFeedbackToWatch(isCoasting: Bool, vx: Double, vy: Double) {
+        guard let session = wcSession,
+              session.activationState == .activated,
+              session.isReachable else { return }
+        let payload: [String: Any] = [
+            "state_fb": ["vx": vx, "vy": vy, "coasting": isCoasting] as [String: Any]
         ]
         session.sendMessage(payload, replyHandler: nil) { _ in
             // Non-critical — ignore errors

@@ -11,6 +11,7 @@
 		188DA5CED0661A729B20623A /* GestureRecognizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5444A250AF2638BCF389E666 /* GestureRecognizer.swift */; };
 		2262CB46F431C3BF6B939C4B /* TrackBallWatch-watchOS.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = CA889BF8D52AD270939911AB /* TrackBallWatch-watchOS.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		26F0A95DECEACB377668558C /* KineticTrackballSphere.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD9323C1645866A4D9D4603 /* KineticTrackballSphere.swift */; };
+		AA11BB22CC33DD44EE55FF66 /* SceneKitSphereView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD44EE55FF66AA11 /* SceneKitSphereView.swift */; };
 		2F8EC7400A2AFF381E63340F /* BonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0A0B2CC74688B06B2EF3AC /* BonjourBrowser.swift */; };
 		5799F9B6C471BA23750B635D /* TrackBallCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC4AEEAC62E6D8C1F5460193 /* TrackBallCompanionApp.swift */; };
 		62439ABC39492A84DBF64A50 /* WatchRelayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C2CA0A4FFFB8ED2776BFAE2 /* WatchRelayService.swift */; };
@@ -70,6 +71,7 @@
 		5444A250AF2638BCF389E666 /* GestureRecognizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GestureRecognizer.swift; sourceTree = "<group>"; };
 		67A8B48E64F160CC1307DD51 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		8AD9323C1645866A4D9D4603 /* KineticTrackballSphere.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KineticTrackballSphere.swift; sourceTree = "<group>"; };
+		BB22CC33DD44EE55FF66AA11 /* SceneKitSphereView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneKitSphereView.swift; sourceTree = "<group>"; };
 		8CD57AEEDFD5CAE7A8DCC574 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
 		AC0A0B2CC74688B06B2EF3AC /* BonjourBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourBrowser.swift; sourceTree = "<group>"; };
 		AC4AEEAC62E6D8C1F5460193 /* TrackBallCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackBallCompanionApp.swift; sourceTree = "<group>"; };
@@ -109,6 +111,7 @@
 				E6E32A6F591E05E763C99D3B /* Info.plist */,
 				BC0E1A73E7F41E6EEDA04E8A /* InputCaptureView.swift */,
 				8AD9323C1645866A4D9D4603 /* KineticTrackballSphere.swift */,
+				BB22CC33DD44EE55FF66AA11 /* SceneKitSphereView.swift */,
 				4690BDE05C1A471AE47671C6 /* TBPPacket.swift */,
 				FF930688960C83FFEE11E843 /* TrackballView.swift */,
 				D653EECFEBB3888D4482D12F /* TrackBallWatchApp.swift */,
@@ -307,6 +310,7 @@
 				188DA5CED0661A729B20623A /* GestureRecognizer.swift in Sources */,
 				8AA2EA37ABE2E6AA125B4040 /* InputCaptureView.swift in Sources */,
 				26F0A95DECEACB377668558C /* KineticTrackballSphere.swift in Sources */,
+				AA11BB22CC33DD44EE55FF66 /* SceneKitSphereView.swift in Sources */,
 				D8ADB10918A47BEF7C423588 /* TBPPacket.swift in Sources */,
 				6730A283776A064E09EF3B28 /* TrackBallWatchApp.swift in Sources */,
 				E1EB92D31D7818BBDD387F6C /* TrackballView.swift in Sources */,

@@ -46,10 +46,13 @@ impl TrackballState {
         self.coasting = true;
     }
 
-    /// Advance physics by one frame (16ms).
+    /// Advance physics by `dt` seconds.
     ///
-    /// Returns the cursor delta to apply this frame, or (0, 0) if stopped.
-    pub fn tick(&mut self) -> (f64, f64) {
+    /// `friction` is stored as per-frame coefficient at 60 Hz (e.g. 0.92).
+    /// The decay is made frame-rate-independent: `decay = friction ^ (dt * 60)`.
+    ///
+    /// Returns the cursor delta to apply, or (0, 0) if stopped.
+    pub fn tick(&mut self, dt: f64) -> (f64, f64) {
         if !self.coasting {
             return (0.0, 0.0);
         }
@@ -57,8 +60,9 @@ impl TrackballState {
         let dx = self.vx;
         let dy = self.vy;
 
-        self.vx *= self.friction;
-        self.vy *= self.friction;
+        let decay = self.friction.powf(dt * 60.0);
+        self.vx *= decay;
+        self.vy *= decay;
 
         let speed = (self.vx * self.vx + self.vy * self.vy).sqrt();
         if speed < self.stop_threshold {
@@ -96,7 +100,7 @@ mod tests {
 
         let mut frames = 0;
         while state.coasting {
-            state.tick();
+            state.tick(1.0 / 60.0);
             frames += 1;
             assert!(frames < 1000, "should stop within 1000 frames");
         }
@@ -114,13 +118,13 @@ mod tests {
 
         let mut slow_frames = 0;
         while slow.coasting {
-            slow.tick();
+            slow.tick(1.0 / 60.0);
             slow_frames += 1;
         }
 
         let mut fast_frames = 0;
         while fast.coasting {
-            fast.tick();
+            fast.tick(1.0 / 60.0);
             fast_frames += 1;
         }
 
@@ -136,13 +140,13 @@ mod tests {
         state.fling(100.0, 100.0);
         state.stop();
         assert!(!state.coasting);
-        assert_eq!(state.tick(), (0.0, 0.0));
+        assert_eq!(state.tick(1.0 / 60.0), (0.0, 0.0));
     }
 
     #[test]
     fn no_coast_when_not_flinging() {
         let mut state = TrackballState::default();
-        assert_eq!(state.tick(), (0.0, 0.0));
+        assert_eq!(state.tick(1.0 / 60.0), (0.0, 0.0));
         assert!(!state.coasting);
     }
 
@@ -153,7 +157,7 @@ mod tests {
 
         let mut total_x = 0.0;
         while state.coasting {
-            let (dx, _) = state.tick();
+            let (dx, _) = state.tick(1.0 / 60.0);
             total_x += dx;
         }
         // With v0=20 and friction=0.92, total ~= v0 / (1 - 0.92) = 250 px

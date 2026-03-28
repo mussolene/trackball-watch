@@ -23,6 +23,8 @@ final class WatchSessionManager: NSObject, ObservableObject {
     @Published var hand: Handedness = .right
     /// Host trackball friction (0.50–0.99); applied once per frame on watch coast, matching desktop.
     @Published var trackballFriction: Double = 0.92
+    /// Latest coasting state feedback from desktop physics engine.
+    @Published var coastingState: (vx: Double, vy: Double, active: Bool) = (0, 0, false)
 
     private var wcSession: WCSession?
     private var sequenceNumber: UInt16 = 0
@@ -127,6 +129,12 @@ extension WatchSessionManager: WCSessionDelegate {
             if let raw = message["friction"],
                let friction = (raw as? NSNumber)?.doubleValue ?? raw as? Double {
                 self.trackballFriction = min(0.99, max(0.5, friction))
+            }
+            if let fb = message["state_fb"] as? [String: Any] {
+                let vx = (fb["vx"] as? NSNumber)?.doubleValue ?? 0
+                let vy = (fb["vy"] as? NSNumber)?.doubleValue ?? 0
+                let active = (fb["coasting"] as? Bool) ?? false
+                self.coastingState = (vx, vy, active)
             }
         }
     }

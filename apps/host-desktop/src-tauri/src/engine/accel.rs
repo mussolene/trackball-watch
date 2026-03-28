@@ -58,8 +58,17 @@ pub fn apply_curve(delta: f64, cfg: &AccelConfig) -> f64 {
 }
 
 /// Apply acceleration curve to a 2D (dx, dy) vector.
+///
+/// The curve is applied to the **magnitude** of the vector to preserve direction.
+/// Applying it independently to each axis causes 8-direction snapping with tanh saturation.
 pub fn apply_curve_2d(dx: f64, dy: f64, cfg: &AccelConfig) -> (f64, f64) {
-    (apply_curve(dx, cfg), apply_curve(dy, cfg))
+    let mag = (dx * dx + dy * dy).sqrt();
+    if mag < 1e-9 {
+        return (0.0, 0.0);
+    }
+    let out_mag = apply_curve(mag, cfg);
+    let scale = out_mag / mag;
+    (dx * scale, dy * scale)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────
@@ -125,10 +134,21 @@ mod tests {
     }
 
     #[test]
-    fn apply_curve_2d_independent() {
+    fn apply_curve_2d_preserves_direction() {
         let cfg = AccelConfig::default();
-        let (ox, oy) = apply_curve_2d(3.0, -5.0, &cfg);
-        assert!((ox - apply_curve(3.0, &cfg)).abs() < 1e-9);
-        assert!((oy - apply_curve(-5.0, &cfg)).abs() < 1e-9);
+        // Magnitude-preserving: direction should be unchanged
+        let (ox, oy) = apply_curve_2d(3.0, -4.0, &cfg);  // magnitude = 5
+        let out_mag = (ox * ox + oy * oy).sqrt();
+        let expected_mag = apply_curve(5.0, &cfg);
+        assert!((out_mag - expected_mag).abs() < 1e-9, "magnitude: {} vs {}", out_mag, expected_mag);
+        // Direction preserved: ratio should match input
+        assert!((ox / oy - 3.0 / -4.0).abs() < 1e-9, "direction not preserved");
+    }
+
+    #[test]
+    fn apply_curve_2d_zero_gives_zero() {
+        let cfg = AccelConfig::default();
+        let (ox, oy) = apply_curve_2d(0.0, 0.0, &cfg);
+        assert_eq!((ox, oy), (0.0, 0.0));
     }
 }

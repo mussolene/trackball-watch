@@ -91,6 +91,13 @@ mod imp {
             unsafe { AXIsProcessTrustedWithOptions(std::ptr::null()) }
         }
 
+        /// Open System Settings → Privacy & Security → Accessibility.
+        pub fn open_accessibility_settings() {
+            let _ = std::process::Command::new("open")
+                .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+                .spawn();
+        }
+
         fn post_mouse_event(&self, event_type: u32, x: f64, y: f64, button: u32) {
             unsafe {
                 let event = CGEventCreateMouseEvent(

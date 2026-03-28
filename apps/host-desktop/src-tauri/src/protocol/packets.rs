@@ -162,6 +162,8 @@ pub mod packet_type {
     pub const HANDSHAKE: u8 = 0x10;
     pub const HEARTBEAT: u8 = 0x11;
     pub const CONFIG: u8 = 0x12;
+    /// Desktop → Watch. Physics state feedback for syncing visual animation. ~10 Hz.
+    pub const STATE_FEEDBACK: u8 = 0x13;
     pub const PING: u8 = 0x20;
     pub const PONG: u8 = 0x21;
 }
