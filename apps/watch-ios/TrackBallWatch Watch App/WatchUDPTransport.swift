@@ -45,6 +45,8 @@ final class WatchUDPTransport {
         )
         let params = NWParameters.udp
         params.allowLocalEndpointReuse = true
+        // Force direct Wi-Fi — prohibit BT relay through iPhone (.other interface)
+        params.prohibitedInterfaceTypes = [.cellular, .other, .loopback, .wiredEthernet]
         let conn = NWConnection(to: endpoint, using: params)
         let h = host, p = port
         log.info("Connecting UDP → \(h, privacy: .public):\(p, privacy: .public)")

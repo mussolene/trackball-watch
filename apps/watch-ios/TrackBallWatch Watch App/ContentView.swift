@@ -54,6 +54,16 @@ struct ContentView: View {
             .padding(4)
             .navigationTitle("TrackBall")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    NavigationLink(destination: DiscoveryView()
+                        .environmentObject(sessionManager)
+                        .environmentObject(hostStore)) {
+                        Image(systemName: "antenna.radiowaves.left.and.right")
+                            .font(.system(size: 11))
+                    }
+                }
+            }
         }
     }
 
