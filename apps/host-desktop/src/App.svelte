@@ -75,6 +75,9 @@
       kalman_q_vel: 1.0,
       kalman_r_noise: 0.5,
       trackball_friction: 0.92,
+      smoothing_profile: 'balanced',
+      one_euro_min_cutoff: 1.0,
+      one_euro_beta: 0.007,
       udp_port: 47474,
       start_minimized: true,
       start_on_login: false

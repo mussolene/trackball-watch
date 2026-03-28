@@ -15,6 +15,8 @@
 		CC11DD22EE33FF44AA55BB01 /* WatchUDPTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD22EE33FF44AA55BB66CC01 /* WatchUDPTransport.swift */; };
 		EE33FF44AA55BB66CC11DD01 /* HostStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF44AA55BB66CC11DD22EE01 /* HostStore.swift */; };
 		11223344556677889900AA01 /* HostPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22334455667788990011BB01 /* HostPickerView.swift */; };
+		AA11BB22CC33DD44EE550001 /* WatchBonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD44EE55FF660001 /* WatchBonjourBrowser.swift */; };
+		CC33DD44EE55FF6600110001 /* DiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD44EE55FF66001122330001 /* DiscoveryView.swift */; };
 		2F8EC7400A2AFF381E63340F /* BonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0A0B2CC74688B06B2EF3AC /* BonjourBrowser.swift */; };
 		5799F9B6C471BA23750B635D /* TrackBallCompanionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC4AEEAC62E6D8C1F5460193 /* TrackBallCompanionApp.swift */; };
 		62439ABC39492A84DBF64A50 /* WatchRelayService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C2CA0A4FFFB8ED2776BFAE2 /* WatchRelayService.swift */; };
@@ -94,6 +96,8 @@
 		DD22EE33FF44AA55BB66CC01 /* WatchUDPTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchUDPTransport.swift; sourceTree = "<group>"; };
 		FF44AA55BB66CC11DD22EE01 /* HostStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostStore.swift; sourceTree = "<group>"; };
 		22334455667788990011BB01 /* HostPickerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostPickerView.swift; sourceTree = "<group>"; };
+		BB22CC33DD44EE55FF660001 /* WatchBonjourBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBonjourBrowser.swift; sourceTree = "<group>"; };
+		DD44EE55FF66001122330001 /* DiscoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -125,6 +129,8 @@
 				DD22EE33FF44AA55BB66CC01 /* WatchUDPTransport.swift */,
 				FF44AA55BB66CC11DD22EE01 /* HostStore.swift */,
 				22334455667788990011BB01 /* HostPickerView.swift */,
+				BB22CC33DD44EE55FF660001 /* WatchBonjourBrowser.swift */,
+				DD44EE55FF66001122330001 /* DiscoveryView.swift */,
 				64DF2F8D3118E168DF4748B6 /* Tests */,
 			);
 			path = "TrackBallWatch Watch App";
@@ -327,6 +333,8 @@
 				CC11DD22EE33FF44AA55BB01 /* WatchUDPTransport.swift in Sources */,
 				EE33FF44AA55BB66CC11DD01 /* HostStore.swift in Sources */,
 				11223344556677889900AA01 /* HostPickerView.swift in Sources */,
+				AA11BB22CC33DD44EE550001 /* WatchBonjourBrowser.swift in Sources */,
+				CC33DD44EE55FF6600110001 /* DiscoveryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

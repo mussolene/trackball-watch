@@ -18,14 +18,38 @@ pub struct AppConfig {
     pub kalman_q_vel: f64,
     pub kalman_r_noise: f64,
     pub trackball_friction: f64,
-    /// One-Euro filter: minimum cutoff frequency Hz (smoothing at rest).
+    pub smoothing_profile: SmoothingProfile,
+    /// One-Euro filter: minimum cutoff frequency Hz (smoothing at rest). Used when profile=Custom.
     pub one_euro_min_cutoff: f64,
-    /// One-Euro filter: speed coefficient (higher = less lag during fast motion).
+    /// One-Euro filter: speed coefficient (higher = less lag during fast motion). Used when profile=Custom.
     pub one_euro_beta: f64,
     pub udp_port: u16,
     pub device_id: String,
     pub start_minimized: bool,
     pub start_on_login: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum SmoothingProfile {
+    Precise,     // min_cutoff=0.5, beta=0.003  — precise work, documents
+    #[default]
+    Balanced,    // min_cutoff=1.0, beta=0.007  — general use
+    Responsive,  // min_cutoff=3.0, beta=0.02   — fast scrolling, gaming
+    Custom,      // uses one_euro_min_cutoff / one_euro_beta directly
+}
+
+impl SmoothingProfile {
+    /// Returns (min_cutoff, beta) for this profile.
+    /// `custom_mc` and `custom_beta` are used only when `profile == Custom`.
+    pub fn params(self, custom_mc: f64, custom_beta: f64) -> (f64, f64) {
+        match self {
+            Self::Precise    => (0.5, 0.003),
+            Self::Balanced   => (1.0, 0.007),
+            Self::Responsive => (3.0, 0.02),
+            Self::Custom     => (custom_mc, custom_beta),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -55,6 +79,7 @@ impl Default for AppConfig {
             kalman_q_vel: 1.0,
             kalman_r_noise: 0.5,
             trackball_friction: 0.92,
+            smoothing_profile: SmoothingProfile::Balanced,
             one_euro_min_cutoff: 1.0,
             one_euro_beta: 0.007,
             udp_port: 47474,

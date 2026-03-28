@@ -55,18 +55,9 @@ impl AppState {
             r_noise: config.kalman_r_noise,
         });
         let trackball = TrackballState::new(config.trackball_friction, 0.5);
-        let one_euro_dx = OneEuroFilter::new(
-            60.0,
-            config.one_euro_min_cutoff,
-            config.one_euro_beta,
-            1.0,
-        );
-        let one_euro_dy = OneEuroFilter::new(
-            60.0,
-            config.one_euro_min_cutoff,
-            config.one_euro_beta,
-            1.0,
-        );
+        let (mc, beta) = config.smoothing_profile.params(config.one_euro_min_cutoff, config.one_euro_beta);
+        let one_euro_dx = OneEuroFilter::new(60.0, mc, beta, 1.0);
+        let one_euro_dy = OneEuroFilter::new(60.0, mc, beta, 1.0);
         Self {
             config,
             kalman,
@@ -124,6 +115,9 @@ fn save_config(config: AppConfig, state: tauri::State<Arc<Mutex<AppState>>>) -> 
             r_noise: config.kalman_r_noise,
         });
         s.trackball = TrackballState::new(config.trackball_friction, 0.5);
+        let (mc, beta) = config.smoothing_profile.params(config.one_euro_min_cutoff, config.one_euro_beta);
+        s.one_euro_dx = OneEuroFilter::new(60.0, mc, beta, 1.0);
+        s.one_euro_dy = OneEuroFilter::new(60.0, mc, beta, 1.0);
         s.config = config;
         if let (Some(tx), Some(_)) = (s.udp_tx.clone(), s.connected_peer.as_ref()) {
             pending_mode_push = Some((tx, s.config.mode, s.config.hand, s.config.trackball_friction));

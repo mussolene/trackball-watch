@@ -92,6 +92,28 @@
   {/if}
 
   <section>
+    <h3>Smoothing</h3>
+    <select bind:value={config.smoothing_profile} on:change={save}>
+      <option value="precise">Precise — documents &amp; code (less lag at rest)</option>
+      <option value="balanced">Balanced — general use</option>
+      <option value="responsive">Responsive — fast scrolling</option>
+      <option value="custom">Custom</option>
+    </select>
+    {#if config.smoothing_profile === 'custom'}
+      <label class="row-label">
+        Min cutoff <span class="value">{config.one_euro_min_cutoff?.toFixed(2) ?? '1.00'} Hz</span>
+        <input type="range" min="0.1" max="10" step="0.1"
+          bind:value={config.one_euro_min_cutoff} on:change={save} />
+      </label>
+      <label class="row-label">
+        Beta <span class="value">{config.one_euro_beta?.toFixed(4) ?? '0.0070'}</span>
+        <input type="range" min="0.001" max="0.1" step="0.001"
+          bind:value={config.one_euro_beta} on:change={save} />
+      </label>
+    {/if}
+  </section>
+
+  <section>
     <label class="checkbox-label">
       <input
         type="checkbox"
@@ -140,6 +162,17 @@
     font-weight: 400;
     color: #007aff;
     text-transform: none;
+  }
+
+  .row-label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: #555;
+  }
+  :global(html[data-theme="dark"]) .row-label {
+    color: #aeaeb2;
   }
 
   .button-group {
