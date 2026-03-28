@@ -38,6 +38,8 @@ struct AppState {
     /// Sub-pixel fractional accumulator — prevents rounding loss at low speeds.
     frac_x: f64,
     frac_y: f64,
+    /// Timestamp of last TOUCH_MOVED packet — used to compute actual dt for One Euro filter.
+    last_touch_time: Option<std::time::Instant>,
     /// Counter for throttling STATE_FEEDBACK packets (~10 Hz = every 6 coast frames).
     feedback_frame_count: u8,
     connected_peer: Option<ConnectedPeer>,
@@ -79,6 +81,7 @@ impl AppState {
             one_euro_dy,
             frac_x: 0.0,
             frac_y: 0.0,
+            last_touch_time: None,
             feedback_frame_count: 0,
             connected_peer: None,
             udp_tx: None,
@@ -420,9 +423,15 @@ pub fn run() {
                     .enable_all()
                     .build()
                     .expect("tokio runtime");
-                std::thread::spawn(move || loop {
-                    std::thread::sleep(std::time::Duration::from_millis(16));
-                    trackball_coast_step(&state_for_coast);
+                std::thread::spawn(move || {
+                    let mut last = std::time::Instant::now();
+                    loop {
+                        std::thread::sleep(std::time::Duration::from_millis(14));
+                        let now = std::time::Instant::now();
+                        let dt = now.duration_since(last).as_secs_f64().clamp(0.005, 0.05);
+                        last = now;
+                        trackball_coast_step(&state_for_coast, dt);
+                    }
                 });
                 rt.block_on(async move {
                     let _mdns = if let Ok(mut mdns) = server::mdns::MdnsAdvertiser::new() {
@@ -544,7 +553,7 @@ fn pairing_pin(host: &str, port: u16) -> String {
 }
 
 /// Advance trackball inertia at ~60 Hz when coasting (FLING already set velocity).
-fn trackball_coast_step(state: &Arc<Mutex<AppState>>) {
+fn trackball_coast_step(state: &Arc<Mutex<AppState>>, dt: f64) {
     let mut s = match state.lock() {
         Ok(g) => g,
         Err(_) => return,
@@ -552,7 +561,7 @@ fn trackball_coast_step(state: &Arc<Mutex<AppState>>) {
     if s.config.mode != InputMode::Trackball || !s.trackball.coasting {
         return;
     }
-    let (dx, dy) = s.trackball.tick(1.0 / 60.0);
+    let (dx, dy) = s.trackball.tick(dt);
     if dx == 0.0 && dy == 0.0 {
         // Coasting just stopped — send one final feedback so watch stops animating
         if let Some(tx) = s.udp_tx.clone() {
@@ -641,6 +650,7 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 s.frac_y = 0.0;
                 s.last_raw_x = 0.0;
                 s.last_raw_y = 0.0;
+                s.last_touch_time = None;
             }
             let payload = ConnectionStatusPayload {
                 state: "disconnected".into(),
@@ -693,6 +703,7 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 s.one_euro_dy.reset();
                 s.frac_x = 0.0;
                 s.frac_y = 0.0;
+                s.last_touch_time = None;
                 return;
             }
 
@@ -736,22 +747,21 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 if speed < 60.0 { 2.0 } else { 0.0 }
             };
 
-            if dx.abs() < jitter_deadzone {
-                dx = 0.0;
-            }
-            if dy.abs() < jitter_deadzone {
-                dy = 0.0;
-            }
-            if dx == 0.0 && dy == 0.0 {
+            // Deadzone on magnitude — avoids axis-snapping on diagonal slow moves
+            if speed < jitter_deadzone {
                 return;
             }
             dx = dx.clamp(-MAX_DELTA, MAX_DELTA);
             dy = dy.clamp(-MAX_DELTA, MAX_DELTA);
 
-            // One-Euro filter: adapts cutoff based on signal derivative.
-            // Low speed → min_cutoff (heavy smoothing); high speed → raises cutoff (low lag).
-            dx = s.one_euro_dx.filter(dx);
-            dy = s.one_euro_dy.filter(dy);
+            // One-Euro filter with actual inter-packet dt for correct frequency estimation.
+            let now = std::time::Instant::now();
+            let dt = s.last_touch_time
+                .map(|t| now.duration_since(t).as_secs_f64().clamp(0.004, 0.1))
+                .unwrap_or(1.0 / 60.0);
+            s.last_touch_time = Some(now);
+            dx = s.one_euro_dx.filter_dt(dx, dt);
+            dy = s.one_euro_dy.filter_dt(dy, dt);
 
             if dx.abs() < 0.5 && dy.abs() < 0.5 {
                 return;

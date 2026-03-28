@@ -42,20 +42,32 @@ impl OneEuroFilter {
     }
 
     /// Filter a new sample, returning the smoothed value.
+    /// Uses the nominal `freq` set at construction.
     pub fn filter(&mut self, x: f64) -> f64 {
+        self.filter_freq(x, self.freq)
+    }
+
+    /// Filter with actual inter-sample frequency (1/dt).
+    /// Use this when packet arrival rate is variable to avoid filter mis-tuning.
+    pub fn filter_dt(&mut self, x: f64, dt: f64) -> f64 {
+        let freq = (1.0 / dt).clamp(10.0, 200.0);
+        self.filter_freq(x, freq)
+    }
+
+    fn filter_freq(&mut self, x: f64, freq: f64) -> f64 {
         let Some(x_prev) = self.x_prev else {
             self.x_prev = Some(x);
             return x;
         };
 
         // Derivative estimate (filtered)
-        let dx_raw = (x - x_prev) * self.freq;
-        let a_d = Self::alpha(self.d_cutoff, self.freq);
+        let dx_raw = (x - x_prev) * freq;
+        let a_d = Self::alpha(self.d_cutoff, freq);
         let dx_hat = self.dx_prev + a_d * (dx_raw - self.dx_prev);
 
         // Adaptive cutoff based on speed
         let cutoff = self.min_cutoff + self.beta * dx_hat.abs();
-        let a = Self::alpha(cutoff, self.freq);
+        let a = Self::alpha(cutoff, freq);
 
         let x_hat = x_prev + a * (x - x_prev);
 
