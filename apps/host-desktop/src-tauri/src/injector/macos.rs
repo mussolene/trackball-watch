@@ -8,6 +8,10 @@ use crate::injector::platform::{InjectorError, InputInjector};
 #[cfg(target_os = "macos")]
 mod imp {
     use super::*;
+    use core_foundation::boolean::CFBoolean;
+    use core_foundation::dictionary::CFDictionary;
+    use core_foundation::string::CFString;
+    use core_foundation::base::TCFType;
     use std::ffi::c_void;
 
     type CGEventRef = *mut c_void;
@@ -91,6 +95,20 @@ mod imp {
             unsafe { AXIsProcessTrustedWithOptions(std::ptr::null()) }
         }
 
+        /// Triggers the **system** Accessibility prompt (same mechanism as many Mac apps):
+        /// `AXIsProcessTrustedWithOptions` with `AXTrustedCheckOptionPrompt` = true.
+        /// No-op if already trusted. Safe to call every launch; macOS may not re-show the sheet if dismissed recently.
+        pub fn prompt_accessibility_permission() -> bool {
+            if Self::has_accessibility_permission() {
+                return true;
+            }
+            let key = CFString::new("AXTrustedCheckOptionPrompt");
+            let opts = CFDictionary::from_CFType_pairs(&[(key, CFBoolean::true_value())]);
+            unsafe {
+                AXIsProcessTrustedWithOptions(opts.as_concrete_TypeRef().cast::<c_void>())
+            }
+        }
+
         /// Open System Settings → Privacy & Security → Accessibility.
         pub fn open_accessibility_settings() {
             let _ = std::process::Command::new("open")
@@ -115,6 +133,7 @@ mod imp {
     }
 
     impl InputInjector for MacOSInjector {
+        /// `dx`/`dy` may be fractional; `CGEvent` uses `CGFloat` (sub-point positioning).
         fn move_relative(&self, dx: f64, dy: f64) -> Result<(), InjectorError> {
             let (cx, cy) = current_mouse_position();
             self.post_mouse_event(

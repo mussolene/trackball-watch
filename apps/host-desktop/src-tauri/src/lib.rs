@@ -35,9 +35,6 @@ struct AppState {
     /// One-Euro filters for dx/dy smoothing (replace adaptive EMA).
     one_euro_dx: OneEuroFilter,
     one_euro_dy: OneEuroFilter,
-    /// Sub-pixel fractional accumulator — prevents rounding loss at low speeds.
-    frac_x: f64,
-    frac_y: f64,
     /// Timestamp of last TOUCH_MOVED packet — used to compute actual dt for One Euro filter.
     last_touch_time: Option<std::time::Instant>,
     /// Counter for throttling STATE_FEEDBACK packets (~10 Hz = every 6 coast frames).
@@ -70,8 +67,6 @@ impl AppState {
             smoothed_dy: 0.0,
             one_euro_dx,
             one_euro_dy,
-            frac_x: 0.0,
-            frac_y: 0.0,
             last_touch_time: None,
             feedback_frame_count: 0,
             connected_peer: None,
@@ -91,6 +86,19 @@ struct ConnectionStatusPayload {
     peer: Option<ConnectedPeer>,
 }
 
+#[derive(serde::Serialize)]
+struct SaveConfigResult {
+    /// UDP listener is started once at launch; new port needs app restart.
+    needs_app_restart: bool,
+}
+
+/// macOS Accessibility + which binary TCC must allow (dev vs `/Applications` are different rows).
+#[derive(serde::Serialize, Clone)]
+struct AccessibilityStatus {
+    trusted: bool,
+    executable_path: String,
+}
+
 // ── Tauri commands ────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -99,7 +107,15 @@ fn get_config(state: tauri::State<Arc<Mutex<AppState>>>) -> AppConfig {
 }
 
 #[tauri::command]
-fn save_config(config: AppConfig, state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(), String> {
+fn save_config(
+    config: AppConfig,
+    state: tauri::State<Arc<Mutex<AppState>>>,
+) -> Result<SaveConfigResult, String> {
+    if !(1024..=65535).contains(&config.udp_port) {
+        return Err("UDP port must be between 1024 and 65535".into());
+    }
+    let old_port = state.lock().unwrap().config.udp_port;
+    let needs_app_restart = old_port != config.udp_port;
     config.save().map_err(|e| e.to_string())?;
     let mut pending_mode_push: Option<(
         tokio::sync::mpsc::UnboundedSender<Vec<u8>>,
@@ -128,15 +144,38 @@ fn save_config(config: AppConfig, state: tauri::State<Arc<Mutex<AppState>>>) -> 
             log::warn!("mode push after save failed: {}", e);
         }
     }
-    Ok(())
+    Ok(SaveConfigResult {
+        needs_app_restart,
+    })
 }
 
-/// Returns true if macOS Accessibility permission is granted.
+/// Accessibility trust + resolved executable path (for System Settings → Accessibility).
 #[tauri::command]
-fn check_accessibility() -> bool {
+fn check_accessibility() -> AccessibilityStatus {
     #[cfg(target_os = "macos")]
     {
-        injector::macos::MacOSInjector::has_accessibility_permission()
+        AccessibilityStatus {
+            trusted: injector::macos::MacOSInjector::has_accessibility_permission(),
+            executable_path: std::env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "(unknown path)".to_string()),
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        AccessibilityStatus {
+            trusted: true,
+            executable_path: String::new(),
+        }
+    }
+}
+
+/// Ask macOS to show the standard Accessibility trust prompt (if not already trusted).
+#[tauri::command]
+fn request_accessibility_prompt() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        injector::macos::MacOSInjector::prompt_accessibility_permission()
     }
     #[cfg(not(target_os = "macos"))]
     {
@@ -311,6 +350,10 @@ pub fn run() {
         let exe = std::env::current_exe()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|_| "(unknown path)".to_string());
+        if !injector::macos::MacOSInjector::has_accessibility_permission() {
+            // System sheet: “TrackBall Watch would like to control this computer…”
+            let _ = injector::macos::MacOSInjector::prompt_accessibility_permission();
+        }
         let trusted = injector::macos::MacOSInjector::has_accessibility_permission();
         log::info!(
             "macOS input injection: Accessibility trusted={} for {}",
@@ -320,8 +363,8 @@ pub fn run() {
         if !trusted {
             log::warn!(
                 "Accessibility is off for this executable — cursor/clicks will not work. \
-                 System Settings → Privacy & Security → Accessibility → enable TrackBall Watch. \
-                 Note: dev builds (`target/debug/trackball-watch`) and the installed `.app` are separate entries; enable both if you use both."
+                 Use the system prompt or System Settings → Privacy & Security → Accessibility. \
+                 Dev (`target/debug/…`) and `/Applications/…` are separate entries."
             );
         }
     }
@@ -333,6 +376,12 @@ pub fn run() {
     let app_state_udp = app_state.clone();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
@@ -344,6 +393,7 @@ pub fn run() {
             get_pairing_info,
             push_mode,
             check_accessibility,
+            request_accessibility_prompt,
             open_accessibility_settings,
         ])
         .setup(move |app| {
@@ -362,10 +412,36 @@ pub fn run() {
                 MenuItem::with_id(app, "show_qr", "Show Pairing QR…", true, None::<&str>)?;
             let disconnect_item =
                 MenuItem::with_id(app, "disconnect", "Disconnect Device", true, None::<&str>)?;
-            let menu = Menu::with_items(
+            #[cfg(target_os = "macos")]
+            let a11y_item = MenuItem::with_id(
                 app,
-                &[&show_qr_item, &settings_item, &disconnect_item, &quit],
+                "a11y",
+                "Accessibility (enable cursor control)…",
+                true,
+                None::<&str>,
             )?;
+            let menu = {
+                #[cfg(target_os = "macos")]
+                {
+                    Menu::with_items(
+                        app,
+                        &[
+                            &show_qr_item,
+                            &settings_item,
+                            &a11y_item,
+                            &disconnect_item,
+                            &quit,
+                        ],
+                    )?
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    Menu::with_items(
+                        app,
+                        &[&show_qr_item, &settings_item, &disconnect_item, &quit],
+                    )?
+                }
+            };
 
             let mut tray_builder = TrayIconBuilder::with_id("main-tray");
             if let Some(icon) = app.default_window_icon().cloned() {
@@ -402,13 +478,25 @@ pub fn run() {
                         let _ = app.emit("connection_status_changed", payload);
                         update_tray(app, false, None);
                     }
+                    #[cfg(target_os = "macos")]
+                    "a11y" => {
+                        let _ = injector::macos::MacOSInjector::prompt_accessibility_permission();
+                        injector::macos::MacOSInjector::open_accessibility_settings();
+                        if let Some(win) = app.get_webview_window("main") {
+                            let _ = win.show();
+                            let _ = win.set_focus();
+                        }
+                    }
                     _ => {}
                 })
                 .build(app)?;
 
+            update_tray(app.handle(), false, None);
+
             // ── UDP server ────────────────────────────────────────────────────
             let state_for_coast = app_state_udp.clone();
             let state_for_thread = app_state_udp;
+            let app_for_coast = app_handle.clone();
             let handle_for_thread = app_handle;
 
             let lan_bindings = local_lan_bindings();
@@ -424,7 +512,7 @@ pub fn run() {
                         let now = std::time::Instant::now();
                         let dt = now.duration_since(last).as_secs_f64().clamp(0.005, 0.05);
                         last = now;
-                        trackball_coast_step(&state_for_coast, dt);
+                        trackball_coast_step(&state_for_coast, dt, &app_for_coast);
                     }
                 });
                 rt.block_on(async move {
@@ -462,7 +550,12 @@ pub fn run() {
 
 fn update_tray(app: &tauri::AppHandle, connected: bool, peer_addr: Option<&str>) {
     if let Some(tray) = app.tray_by_id("main-tray") {
-        let tooltip = if connected {
+        #[cfg(target_os = "macos")]
+        let a11y_ok = injector::macos::MacOSInjector::has_accessibility_permission();
+        #[cfg(not(target_os = "macos"))]
+        let a11y_ok = true;
+
+        let mut tooltip = if connected {
             format!(
                 "TrackBall Watch — Connected{}",
                 peer_addr.map(|a| format!(" ({})", a)).unwrap_or_default()
@@ -470,7 +563,11 @@ fn update_tray(app: &tauri::AppHandle, connected: bool, peer_addr: Option<&str>)
         } else {
             "TrackBall Watch — Disconnected".to_string()
         };
-        let _ = tray.set_tooltip(Some(tooltip));
+        #[cfg(target_os = "macos")]
+        if !a11y_ok {
+            tooltip.push_str(" — Accessibility OFF (cursor won’t move)");
+        }
+        let _ = tray.set_tooltip(Some(&tooltip));
     }
 }
 
@@ -546,8 +643,27 @@ fn pairing_pin(host: &str, port: u16) -> String {
     format!("{:06}", value % 1_000_000)
 }
 
+/// Synthetic pointer events must run on the AppKit main thread; UDP/Tokio use a background runtime.
+#[cfg(target_os = "macos")]
+fn dispatch_input_action<F>(app: &tauri::AppHandle, f: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    if let Err(e) = app.run_on_main_thread(f) {
+        log::warn!("dispatch_input_action: main-thread dispatch failed: {}", e);
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn dispatch_input_action<F>(_app: &tauri::AppHandle, f: F)
+where
+    F: FnOnce() + Send + 'static,
+{
+    f();
+}
+
 /// Advance trackball inertia at ~60 Hz when coasting (FLING already set velocity).
-fn trackball_coast_step(state: &Arc<Mutex<AppState>>, dt: f64) {
+fn trackball_coast_step(state: &Arc<Mutex<AppState>>, dt: f64, app: &tauri::AppHandle) {
     let mut s = match state.lock() {
         Ok(g) => g,
         Err(_) => return,
@@ -570,23 +686,21 @@ fn trackball_coast_step(state: &Arc<Mutex<AppState>>, dt: f64) {
     let vy = s.trackball.vy;
     let is_coasting = s.trackball.coasting;
     let (sx, sy) = engine::accel::apply_curve_2d(dx * user_scale, dy * user_scale, &cfg);
-    s.frac_x += sx;
-    s.frac_y += sy;
-    let ix = s.frac_x as i64;
-    let iy = s.frac_y as i64;
-    s.frac_x -= ix as f64;
-    s.frac_y -= iy as f64;
+    // Sub-pixel deltas: macOS CGEvent mouse location uses CGFloat; integer steps felt like 2–3 mm jumps.
     // Throttle STATE_FEEDBACK to ~10 Hz (every 6 frames at 60 Hz)
     s.feedback_frame_count = s.feedback_frame_count.wrapping_add(1);
     let should_send_feedback = s.feedback_frame_count % 6 == 0;
     let udp_tx = if should_send_feedback { s.udp_tx.clone() } else { None };
     drop(s);
-    let injector = match injector::create_injector() {
-        Ok(i) => i,
-        Err(_) => return,
-    };
-    if ix != 0 || iy != 0 {
-        let _ = injector.move_relative(ix as f64, iy as f64);
+    if sx != 0.0 || sy != 0.0 {
+        dispatch_input_action(app, move || {
+            match injector::create_injector() {
+                Ok(inj) => {
+                    let _ = inj.move_relative(sx, sy);
+                }
+                Err(e) => log::warn!("Injector unavailable (coast): {}", e),
+            }
+        });
     }
     if let Some(tx) = udp_tx {
         let _ = send_state_feedback(&tx, is_coasting, vx, vy);
@@ -617,6 +731,19 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 let _ = win.set_focus();
             }
 
+            #[cfg(target_os = "macos")]
+            if !injector::macos::MacOSInjector::has_accessibility_permission() {
+                let _ = app.emit(
+                    "accessibility_required",
+                    "This app build needs its own Accessibility permission. \
+                     System Settings → Privacy & Security → Accessibility → enable “TrackBall Watch” \
+                     (the one from Applications, not the terminal/debug build).",
+                );
+                log::warn!(
+                    "Device connected but Accessibility is off for this executable — UDP works, cursor injection is blocked."
+                );
+            }
+
             // Ensure watch mode reflects current desktop mode right after link-up.
             let mode_push = {
                 let s = state.lock().unwrap();
@@ -640,8 +767,6 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 s.smoothed_dy = 0.0;
                 s.one_euro_dx.reset();
                 s.one_euro_dy.reset();
-                s.frac_x = 0.0;
-                s.frac_y = 0.0;
                 s.last_raw_x = 0.0;
                 s.last_raw_y = 0.0;
                 s.last_touch_time = None;
@@ -657,13 +782,6 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
         InputEvent::Heartbeat(_) => {}
 
         InputEvent::Touch(_, payload) => {
-            let injector = match injector::create_injector() {
-                Ok(i) => i,
-                Err(e) => {
-                    log::warn!("Injector unavailable: {}", e);
-                    return;
-                }
-            };
             let mut s = state.lock().unwrap();
             let phase = TouchPhase::try_from(payload.phase).unwrap_or(TouchPhase::Moved);
 
@@ -695,8 +813,6 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 s.smoothed_dy = 0.0;
                 s.one_euro_dx.reset();
                 s.one_euro_dy.reset();
-                s.frac_x = 0.0;
-                s.frac_y = 0.0;
                 s.last_touch_time = None;
                 return;
             }
@@ -757,46 +873,59 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
             dx = s.one_euro_dx.filter_dt(dx, dt);
             dy = s.one_euro_dy.filter_dt(dy, dt);
 
-            if dx.abs() < 0.5 && dy.abs() < 0.5 {
-                return;
-            }
-
             let cfg = s.config.accel;
             let (sx, sy) = engine::accel::apply_curve_2d(dx, dy, &cfg);
-            s.frac_x += sx;
-            s.frac_y += sy;
-            let ix = s.frac_x as i64;
-            let iy = s.frac_y as i64;
-            s.frac_x -= ix as f64;
-            s.frac_y -= iy as f64;
-            drop(s);
-            if ix != 0 || iy != 0 {
-                let _ = injector.move_relative(ix as f64, iy as f64);
+            // Drop only true noise in *screen* space; old per-axis 0.5 in TBP units caused stair-stepping.
+            if sx * sx + sy * sy < 1e-8 {
+                return;
             }
+            drop(s);
+            dispatch_input_action(app, move || {
+                match injector::create_injector() {
+                    Ok(inj) => {
+                        let _ = inj.move_relative(sx, sy);
+                    }
+                    Err(e) => log::warn!("Injector unavailable: {}", e),
+                }
+            });
         }
 
         InputEvent::Gesture(_, payload) => {
-            let injector = match injector::create_injector() {
-                Ok(i) => i,
-                Err(e) => {
-                    log::warn!("Injector unavailable: {}", e);
-                    return;
-                }
-            };
             let mut s = state.lock().unwrap();
             match GestureType::try_from(payload.gesture_type).ok() {
                 Some(GestureType::Tap) => {
                     drop(s);
-                    let _ = injector.left_click();
+                    dispatch_input_action(app, || {
+                        match injector::create_injector() {
+                            Ok(i) => {
+                                let _ = i.left_click();
+                            }
+                            Err(e) => log::warn!("Injector unavailable: {}", e),
+                        }
+                    });
                 }
                 Some(GestureType::DoubleTap) => {
                     drop(s);
-                    let _ = injector.left_click();
-                    let _ = injector.left_click();
+                    dispatch_input_action(app, || {
+                        match injector::create_injector() {
+                            Ok(i) => {
+                                let _ = i.left_click();
+                                let _ = i.left_click();
+                            }
+                            Err(e) => log::warn!("Injector unavailable: {}", e),
+                        }
+                    });
                 }
                 Some(GestureType::LongPress) => {
                     drop(s);
-                    let _ = injector.right_click();
+                    dispatch_input_action(app, || {
+                        match injector::create_injector() {
+                            Ok(i) => {
+                                let _ = i.right_click();
+                            }
+                            Err(e) => log::warn!("Injector unavailable: {}", e),
+                        }
+                    });
                 }
                 Some(GestureType::Fling) if s.config.mode == InputMode::Trackball => {
                     s.trackball
@@ -807,14 +936,15 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
         }
 
         InputEvent::Crown(_, payload) => {
-            let injector = match injector::create_injector() {
-                Ok(i) => i,
-                Err(e) => {
-                    log::warn!("Injector unavailable: {}", e);
-                    return;
+            let lines = payload.delta as f64 / 100.0;
+            dispatch_input_action(app, move || {
+                match injector::create_injector() {
+                    Ok(i) => {
+                        let _ = i.scroll_vertical(lines);
+                    }
+                    Err(e) => log::warn!("Injector unavailable: {}", e),
                 }
-            };
-            let _ = injector.scroll_vertical(payload.delta as f64 / 100.0);
+            });
         }
     }
 }

@@ -31,18 +31,26 @@
   let loadError: string | null = null;
   let toast: string | null = null;
   let toastTimer: ReturnType<typeof setTimeout> | undefined;
-  /** macOS Accessibility permission state. Optimistic default; checked on mount. */
-  let hasAccessibility = true;
+  /** macOS Accessibility: null until first check (avoid hiding the banner on a wrong default). */
+  let a11y: { trusted: boolean; executable_path: string } | null = null;
   let accessibilityCheckInterval: ReturnType<typeof setInterval> | undefined;
 
   async function checkAccessibility() {
     try {
-      hasAccessibility = await invoke<boolean>('check_accessibility');
-    } catch { /* ignore on non-macOS */ }
+      a11y = await invoke<{ trusted: boolean; executable_path: string }>('check_accessibility');
+    } catch {
+      a11y = { trusted: true, executable_path: '' };
+    }
   }
 
   async function grantAccessibility() {
-    try { await invoke('open_accessibility_settings'); } catch {}
+    try {
+      await invoke<boolean>('request_accessibility_prompt');
+      await checkAccessibility();
+      if (a11y && !a11y.trusted) {
+        await invoke('open_accessibility_settings');
+      }
+    } catch { /* ignore */ }
   }
 
   function showToast(msg: string) {
@@ -113,6 +121,7 @@
   onMount(() => {
     let unlistenStatus: (() => void) | undefined;
     let unlistenPairing: (() => void) | undefined;
+    let unlistenA11y: (() => void) | undefined;
     let unlistenTheme: (() => void) | undefined;
     let unlistenFocus: (() => void) | undefined;
     let mqListener: ((this: MediaQueryList, ev: MediaQueryListEvent) => void) | undefined;
@@ -137,10 +146,16 @@
 
       await loadInitialData();
       await checkAccessibility();
-      if (!hasAccessibility) {
+      if (a11y && !a11y.trusted) {
+        try {
+          await invoke<boolean>('request_accessibility_prompt');
+          await checkAccessibility();
+        } catch { /* ignore */ }
+      }
+      if (a11y && !a11y.trusted) {
         accessibilityCheckInterval = setInterval(async () => {
           await checkAccessibility();
-          if (hasAccessibility && accessibilityCheckInterval) {
+          if (a11y?.trusted && accessibilityCheckInterval) {
             clearInterval(accessibilityCheckInterval);
             accessibilityCheckInterval = undefined;
           }
@@ -160,13 +175,20 @@
 
       unlistenPairing = await listen('open_pairing_tab', async () => {
         activeTab = 'pairing';
-        if (!pairingInfo) await loadPairingInfo();
+        // QR is built on startup; only load if the first attempt failed.
+        if (!pairingInfo && !qrDataUrl) await loadPairingInfo();
+      });
+
+      unlistenA11y = await listen<string>('accessibility_required', (event) => {
+        showToast(event.payload);
+        void checkAccessibility();
       });
     })();
 
     return () => {
       unlistenStatus?.();
       unlistenPairing?.();
+      unlistenA11y?.();
       unlistenTheme?.();
       unlistenFocus?.();
       if (mqListener) {
@@ -178,7 +200,10 @@
 
   async function saveConfig() {
     try {
-      await invoke('save_config', { config });
+      const result = await invoke<{ needs_app_restart: boolean }>('save_config', { config });
+      if (result.needs_app_restart) {
+        showToast('UDP port saved — quit and reopen the app for the new port to take effect.');
+      }
     } catch (e: any) {
       const msg = typeof e === 'string' ? e : (e?.message ?? 'unknown error');
       showToast(`Failed to save setting: ${msg}`);
@@ -205,10 +230,19 @@
 </script>
 
 <main>
-  {#if !hasAccessibility}
+  {#if a11y && !a11y.trusted}
     <div class="accessibility-banner">
-      <span>⚠ Accessibility permission required for cursor control.</span>
-      <button class="grant-btn" on:click={grantAccessibility}>Open Settings</button>
+      <div class="a11y-banner-copy">
+        <span
+          >Accessibility required for cursor control. In System Settings → Privacy &amp; Security →
+          Accessibility, enable <b>TrackBall Watch</b> for the executable below (Xcode/dev and
+          <code>/Applications</code> are separate entries; toggle off old copies after reinstall).</span
+        >
+        {#if a11y.executable_path}
+          <code class="a11y-exe-path">{a11y.executable_path}</code>
+        {/if}
+      </div>
+      <button class="grant-btn" type="button" on:click={grantAccessibility}>Allow / Open Settings</button>
     </div>
   {/if}
 
@@ -242,8 +276,14 @@
     {:else if activeTab === 'pairing'}
       <div class="pairing-tab">
         <p>In iPhone app: connect this desktop, keep relay active, then move finger on watch trackpad.</p>
-        {#if qrDataUrl && pairingInfo}
-          <img src={qrDataUrl} alt="Pairing QR" class="qr-image" />
+        <div class="qr-frame">
+          {#if qrDataUrl && pairingInfo}
+            <img src={qrDataUrl} alt="Pairing QR" class="qr-image" />
+          {:else}
+            <div class="qr-placeholder"><span>QR unavailable</span></div>
+          {/if}
+        </div>
+        {#if pairingInfo}
           <small class="pairing-line">PIN: <b>{pairingInfo.pin}</b></small>
           <small class="pairing-line">{pairingInfo.host}:{pairingInfo.port}</small>
           <small class="pairing-line">Interface: {pairingInfo.interface}</small>
@@ -254,12 +294,13 @@
               {/each}
             </div>
           {/if}
-          <small class="pairing-line mono">{pairingInfo.pairing_url}</small>
+          <div class="pairing-url-scroll">
+            <small class="pairing-line mono">{pairingInfo.pairing_url}</small>
+          </div>
         {:else}
-          <div class="qr-placeholder"><span>QR unavailable</span></div>
-          <small class="pairing-line">Open iPhone app and use manual IP entry: port 47474.</small>
+          <small class="pairing-line">Open iPhone app and use manual IP entry if QR failed to load.</small>
         {/if}
-        <button class="refresh-btn" on:click={refreshPairingInfo}>Refresh QR/PIN</button>
+        <button class="refresh-btn" on:click={refreshPairingInfo}>Refresh QR / hosts</button>
       </div>
     {/if}
   </section>
@@ -271,6 +312,8 @@
   :global(body),
   :global(#app) {
     height: 100%;
+    margin: 0;
+    overflow: hidden;
     background: #fff;
   }
 
@@ -282,7 +325,6 @@
   }
 
   :global(body) {
-    margin: 0;
     background: inherit;
     color: #1a1a1a;
   }
@@ -294,14 +336,18 @@
   main {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     width: 100%;
-    max-width: 460px;
-    min-height: 100%;
+    max-width: 100%;
+    height: 100%;
+    max-height: 100%;
+    box-sizing: border-box;
     margin: 0 auto;
     padding: 14px 16px 16px;
     display: flex;
     flex-direction: column;
     gap: 12px;
     background: inherit;
+    overflow: hidden;
+    min-height: 0;
   }
 
   nav {
@@ -311,6 +357,7 @@
     border-bottom: 1px solid #e0e0e0;
     padding-bottom: 8px;
     align-items: center;
+    flex-shrink: 0;
   }
   :global(html[data-theme="dark"]) nav {
     border-bottom-color: #3a3a3c;
@@ -356,6 +403,7 @@
     font-size: 13px;
     margin-bottom: 12px;
     animation: slide-in 0.2s ease;
+    flex-shrink: 0;
   }
 
   .toast-connected {
@@ -403,7 +451,11 @@
     border-radius: 12px;
     padding: 14px;
     background: rgba(0, 0, 0, 0.02);
-    min-height: 280px;
+    flex: 1;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   :global(html[data-theme="dark"]) .content-panel {
@@ -417,6 +469,23 @@
     flex-direction: column;
     align-items: center;
     gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .qr-frame {
+    width: 200px;
+    height: 200px;
+    flex-shrink: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #f5f5f7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  :global(html[data-theme='dark']) .qr-frame {
+    background: #2c2c2e;
   }
 
   .qr-placeholder,
@@ -424,6 +493,8 @@
     width: 200px;
     height: 200px;
     border-radius: 12px;
+    display: block;
+    object-fit: contain;
   }
 
   .qr-placeholder {
@@ -432,8 +503,8 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    margin: 16px 0;
     gap: 8px;
+    box-sizing: border-box;
   }
   :global(html[data-theme="dark"]) .qr-placeholder {
     border-color: #48484a;
@@ -456,9 +527,17 @@
     word-break: break-all;
   }
 
+  .pairing-url-scroll {
+    max-height: 3.6em;
+    overflow-y: auto;
+    width: 100%;
+    padding: 0 4px;
+    box-sizing: border-box;
+  }
+
   .accessibility-banner {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     background: rgba(255, 159, 10, 0.15);
     border: 1px solid rgba(255, 159, 10, 0.5);
@@ -467,11 +546,33 @@
     font-size: 13px;
     color: #c67b00;
     gap: 12px;
+    flex-shrink: 0;
+  }
+
+  .a11y-banner-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .a11y-exe-path {
+    display: block;
+    font-size: 11px;
+    word-break: break-all;
+    margin: 0;
+    padding: 4px 6px;
+    background: rgba(0, 0, 0, 0.06);
+    border-radius: 4px;
   }
   :global(html[data-theme="dark"]) .accessibility-banner {
     color: #ff9f0a;
     background: rgba(255, 159, 10, 0.1);
     border-color: rgba(255, 159, 10, 0.35);
+  }
+
+  :global(html[data-theme="dark"]) .a11y-exe-path {
+    background: rgba(255, 255, 255, 0.08);
   }
 
   .grant-btn {

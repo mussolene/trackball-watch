@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build && bash src-tauri/macos-resign-bundle.sh"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",

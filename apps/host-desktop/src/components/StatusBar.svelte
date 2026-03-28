@@ -11,27 +11,37 @@
     : 'iPhone relay: waiting for packets';
 </script>
 
-<div class="status-bar">
-  <div class="dot" style="background: {color}"></div>
-  <span class="label">{label}</span>
-  {#if status === 'connected'}
-    <span class="peer" title="Current relay endpoint">{peer?.addr ?? 'relay active'}</span>
-  {:else}
-    <span class="hint">Open iPhone app, then touch watch trackpad.</span>
-  {/if}
+<div class="status-root">
+  <div class="status-bar">
+    <div class="dot" style="background: {color}"></div>
+    <span class="label">{label}</span>
+    {#if status === 'connected'}
+      <span class="peer" title="Current relay endpoint">{peer?.addr ?? 'relay active'}</span>
+    {:else}
+      <span class="hint">Open iPhone app, then touch watch trackpad.</span>
+    {/if}
+  </div>
+
+  <div class="clients">
+    <div class="clients-title">Relay session</div>
+    {#if status === 'connected'}
+      <div class="client-row">
+        <span class="client-pill">iPhone relay</span>
+        <span class="client-addr">{peer?.addr ?? 'unknown'}</span>
+      </div>
+    {:else}
+      <div class="client-row client-row--idle">
+        <span class="client-idle">Waiting for packets…</span>
+      </div>
+    {/if}
+  </div>
 </div>
 
-{#if status === 'connected'}
-  <div class="clients">
-    <div class="clients-title">Connected Clients</div>
-    <div class="client-row">
-      <span class="client-pill">iPhone relay</span>
-      <span class="client-addr">{peer?.addr ?? 'unknown'}</span>
-    </div>
-  </div>
-{/if}
-
 <style>
+  .status-root {
+    flex-shrink: 0;
+  }
+
   .status-bar {
     display: flex;
     align-items: center;
@@ -78,6 +88,8 @@
     border-radius: 10px;
     padding: 8px 10px;
     background: rgba(0, 0, 0, 0.02);
+    min-height: 52px;
+    box-sizing: border-box;
   }
   :global(html[data-theme="dark"]) .clients {
     border-color: #3a3a3c;
@@ -112,5 +124,17 @@
     font-size: 11px;
     color: #888;
     font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+
+  .client-row--idle {
+    justify-content: flex-start;
+  }
+
+  .client-idle {
+    font-size: 12px;
+    color: #8e8e93;
+  }
+  :global(html[data-theme='dark']) .client-idle {
+    color: #aeaeb2;
   }
 </style>

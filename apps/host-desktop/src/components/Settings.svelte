@@ -9,6 +9,17 @@
     dispatch('save');
   }
 
+  function clampUdpPort() {
+    let p = Math.round(Number(config.udp_port));
+    if (!Number.isFinite(p)) p = 47474;
+    config.udp_port = Math.min(65535, Math.max(1024, p));
+  }
+
+  function savePort() {
+    clampUdpPort();
+    save();
+  }
+
   function setMode(mode: string) {
     config.mode = mode;
     save();
@@ -16,6 +27,7 @@
   }
 
   $: sensitivityPct = Math.round(config?.sensitivity * 100) ?? 100;
+  $: trackballMode = config?.mode === 'trackball';
 </script>
 
 <div class="settings">
@@ -76,20 +88,36 @@
     </select>
   </section>
 
-  {#if config.mode === 'trackball'}
-    <section>
-      <h3>Friction <span class="value">{Math.round(config.trackball_friction * 100)}%</span></h3>
+  <section class="friction-slot" class:friction-dimmed={!trackballMode}>
+    <h3>Trackball friction <span class="value">{Math.round(config.trackball_friction * 100)}%</span></h3>
+    <input
+      type="range"
+      min="0.85"
+      max="0.99"
+      step="0.01"
+      bind:value={config.trackball_friction}
+      on:change={save}
+      disabled={!trackballMode}
+    />
+    <small>{trackballMode ? 'Higher = longer coasting' : 'Switch to Trackball mode to adjust coasting.'}</small>
+  </section>
+
+  <section>
+    <h3>Network</h3>
+    <label class="row-label">
+      UDP port (TBP)
       <input
-        type="range"
-        min="0.85"
-        max="0.99"
-        step="0.01"
-        bind:value={config.trackball_friction}
-        on:change={save}
+        type="number"
+        min="1024"
+        max="65535"
+        step="1"
+        class="port-input"
+        bind:value={config.udp_port}
+        on:change={savePort}
       />
-      <small>Higher = longer coasting</small>
-    </section>
-  {/if}
+    </label>
+    <small>Default 47474. After changing the port, restart the app so the listener and mDNS use the new value.</small>
+  </section>
 
   <section>
     <h3>Smoothing</h3>
@@ -240,5 +268,30 @@
     gap: 8px;
     font-size: 14px;
     cursor: pointer;
+  }
+
+  .friction-slot {
+    min-height: 88px;
+  }
+
+  .friction-dimmed {
+    opacity: 0.55;
+  }
+
+  .port-input {
+    padding: 8px 10px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    font-size: 14px;
+    width: 100%;
+    max-width: 140px;
+    box-sizing: border-box;
+    background: white;
+    color: #1a1a1a;
+  }
+  :global(html[data-theme='dark']) .port-input {
+    background: #2c2c2e;
+    border-color: #48484a;
+    color: #f2f2f7;
   }
 </style>

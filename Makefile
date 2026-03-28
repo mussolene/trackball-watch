@@ -6,6 +6,11 @@ TAURI_DIR := $(DESKTOP)/src-tauri
 WATCH_DIR := apps/watch-ios
 TOOL_DIR  := tools/latency-tester
 
+# macOS .app produced by `tauri:build` (see tauri.conf productName)
+HOST_APP_BUNDLE := TrackBall Watch.app
+HOST_APP_SRC    := $(TAURI_DIR)/target/release/bundle/macos/$(HOST_APP_BUNDLE)
+HOST_APP_DEST   := /Applications/$(HOST_APP_BUNDLE)
+
 XCODE_FLAGS  := CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 CARGO        := $(HOME)/.cargo/bin/cargo
 
@@ -13,7 +18,7 @@ CARGO        := $(HOME)/.cargo/bin/cargo
 WATCH_SIM    := $(shell xcrun simctl list devices available 2>/dev/null | \
                   grep 'Apple Watch' | head -1 | grep -oE '[A-F0-9-]{36}')
 
-.PHONY: all install build build-desktop build-ios build-watch build-tools install-ios \
+.PHONY: all install build build-desktop install-host build-ios build-watch build-tools install-ios \
         install-mobile install-mobile-clean verify \
         dev test test-rust test-swift lint fmt check xcodegen clean help
 
@@ -35,7 +40,15 @@ install: ## Install npm dependencies
 build: build-desktop build-ios build-watch build-tools ## Build all targets
 
 build-desktop: install ## Build desktop host (Tauri release)
-	cd $(DESKTOP) && CI=false npm run tauri build
+	cd $(DESKTOP) && CI=false npm run build && CI=false npm run tauri:build
+
+install-host: build-desktop ## Build desktop and install .app into /Applications (macOS only)
+	@if [[ "$$(uname -s)" != Darwin ]]; then \
+		echo "install-host: only supported on macOS"; exit 1; \
+	fi
+	@test -d "$(HOST_APP_SRC)" || { echo "Missing bundle: $(HOST_APP_SRC) — run build-desktop first"; exit 1; }
+	ditto "$(HOST_APP_SRC)" "$(HOST_APP_DEST)"
+	@echo "Installed $(HOST_APP_DEST)"
 
 build-ios: ## Build iOS companion + embedded Watch app (debug)
 	xcodebuild build \

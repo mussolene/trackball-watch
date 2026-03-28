@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **macOS:** Desktop bundle id was `com.trackball-watch.app` (`.app` suffix confuses the system), the main binary was linker-signed with **Info.plist not bound** to the code signature, and `entitlements.plist` was missing — together this broke TCC / Accessibility matching. Now: `com.trackballwatch.host`, executable `TrackBallWatch`, real entitlements, merged `NSAccessibilityUsageDescription`, and post-build `codesign` so the plist seals with the app (iOS bundle ids unchanged).
+- **macOS:** Pointer injection (`CGEventPost`) runs on the AppKit main thread via `AppHandle::run_on_main_thread`; posting from the Tokio UDP thread often produced no cursor motion even when Accessibility was granted.
+
+### Added
+
+- **Desktop:** `check_accessibility` returns trusted flag plus resolved executable path; settings UI explains dev vs `/Applications` entries.
+- **Desktop:** Single-instance (focus existing window), editable UDP port (restart required), Vite build step in `make build-desktop` after `make clean`, layout fixes for settings/pairing and status bar.
+
 ## [1.0.0] - 2026-03-26
 
 ### Added
