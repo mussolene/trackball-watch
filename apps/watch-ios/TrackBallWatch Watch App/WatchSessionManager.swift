@@ -1,7 +1,6 @@
 import Foundation
 import WatchConnectivity
 import Network
-import Combine
 
 /// Manages input transport to the desktop:
 ///  1. Direct Wi-Fi (Watch → UDP → Desktop) — primary, low-latency
@@ -37,16 +36,43 @@ final class WatchSessionManager: NSObject, ObservableObject {
 
     private var udpTransport: WatchUDPTransport?
     private var heartbeatTimer: Timer?
+    private var pathMonitor: NWPathMonitor?
+    private var reconnectWorkItem: DispatchWorkItem?
 
     // MARK: - Init
 
     override private init() {
         super.init()
         activateWCSession()
+        startPathMonitor()
         // Auto-connect to last-known host on launch
         if let host = HostStore.shared.activeHost {
             connectDirectWiFi(to: host)
         }
+    }
+
+    // MARK: - Path monitor (auto-reconnect on Wi-Fi change)
+
+    private func startPathMonitor() {
+        let monitor = NWPathMonitor(requiredInterfaceType: .wifi)
+        monitor.pathUpdateHandler = { path in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                guard path.status == .satisfied else { return }
+                // Wi-Fi became available — reconnect if UDP is not ready
+                guard self.udpTransport?.isReady != true,
+                      let host = HostStore.shared.activeHost else { return }
+                // Small delay to let network stabilize
+                self.reconnectWorkItem?.cancel()
+                let work = DispatchWorkItem { [weak self] in
+                    Task { @MainActor [weak self] in self?.connectDirectWiFi(to: host) }
+                }
+                self.reconnectWorkItem = work
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0, execute: work)
+            }
+        }
+        monitor.start(queue: DispatchQueue(label: "com.trackball.watch.pathmonitor"))
+        pathMonitor = monitor
     }
 
     // MARK: - WCSession
@@ -101,7 +127,11 @@ final class WatchSessionManager: NSObject, ObservableObject {
         transport.onStateFeedback = { [weak self] coasting, vx, vy in
             self?.coastingState = (vx, vy, coasting)
         }
-        transport.onStateChanged  = { [weak self] _ in self?.refreshConnectionState() }
+        transport.onStateChanged  = { [weak self] state in
+            self?.refreshConnectionState()
+            // Back-off retry on failure while app is active
+            if case .failed = state { self?.scheduleReconnect(to: config) }
+        }
         transport.start()
         udpTransport = transport
 
@@ -117,12 +147,35 @@ final class WatchSessionManager: NSObject, ObservableObject {
         refreshConnectionState()
     }
 
+    private var reconnectAttempt = 0
+
+    private func scheduleReconnect(to config: WatchDesktopConfig) {
+        reconnectWorkItem?.cancel()
+        // Exponential back-off: 2s, 4s, 8s, capped at 30s
+        let delay = min(30.0, pow(2.0, Double(min(reconnectAttempt, 4))))
+        reconnectAttempt += 1
+        let work = DispatchWorkItem { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // Only retry if still not connected
+                guard self.udpTransport?.isReady != true else {
+                    self.reconnectAttempt = 0; return
+                }
+                self.connectDirectWiFi(to: config)
+            }
+        }
+        reconnectWorkItem = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
+    }
+
     private func refreshConnectionState() {
         if let udp = udpTransport {
             switch udp.state {
             case .ready:
                 connectionState = .connected
                 transportMode = .directWiFi
+                reconnectAttempt = 0
+                reconnectWorkItem?.cancel()
             case .connecting:
                 connectionState = .connecting
                 transportMode = .directWiFi

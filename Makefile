@@ -6,10 +6,15 @@ TAURI_DIR := $(DESKTOP)/src-tauri
 WATCH_DIR := apps/watch-ios
 TOOL_DIR  := tools/latency-tester
 
-XCODE_FLAGS := CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+XCODE_FLAGS  := CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+CARGO        := $(HOME)/.cargo/bin/cargo
+
+# Prefer the first available Watch simulator (UUID only)
+WATCH_SIM    := $(shell xcrun simctl list devices available 2>/dev/null | \
+                  grep 'Apple Watch' | head -1 | grep -oE '[A-F0-9-]{36}')
 
 .PHONY: all install build build-desktop build-ios build-watch build-tools install-ios \
-        install-mobile install-mobile-clean \
+        install-mobile install-mobile-clean verify \
         dev test test-rust test-swift lint fmt check xcodegen clean help
 
 # ── Main targets ──────────────────────────────────────────────────────────────
@@ -86,27 +91,48 @@ dev: install ## Run desktop host in dev mode (hot-reload)
 test: test-rust test-swift ## Run all tests
 
 test-rust: ## Run Rust tests (desktop host)
-	cd $(TAURI_DIR) && cargo test --all-features
+	cd $(TAURI_DIR) && $(CARGO) test 2>&1 | grep -E "^test result|^error"
 
-test-swift: ## Build & test watchOS unit tests
+test-swift: ## Build & test watchOS unit tests (uses first available Watch simulator)
+	@echo "==> Watch simulator: $(WATCH_SIM)"
 	xcodebuild test \
 		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
 		-scheme TrackBallWatch-watchOS \
-		-destination 'platform=watchOS Simulator,name=Apple Watch Series 7 (45mm)' \
-		$(XCODE_FLAGS) || true
+		-destination 'platform=watchOS Simulator,id=$(WATCH_SIM)' \
+		$(XCODE_FLAGS) 2>&1 | grep -E "error:|Test Suite|PASSED|FAILED|BUILD" | tail -20 || true
+
+verify: ## Fast CI-style check: cargo check + Rust tests + iOS build
+	@echo "==> cargo check"
+	cd $(TAURI_DIR) && $(CARGO) check --all-features 2>&1 | tail -3
+	@echo "==> cargo test"
+	cd $(TAURI_DIR) && $(CARGO) test 2>&1 | grep -E "^test result|^error"
+	@echo "==> xcodebuild (watchOS)"
+	xcodebuild build \
+		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
+		-scheme TrackBallWatch-watchOS \
+		-destination 'generic/platform=watchOS' \
+		-configuration Debug \
+		$(XCODE_FLAGS) 2>&1 | grep -E "error:|BUILD "
+	@echo "==> xcodebuild (iOS)"
+	xcodebuild build \
+		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
+		-scheme TrackBallWatch \
+		-destination 'generic/platform=iOS' \
+		-configuration Debug \
+		$(XCODE_FLAGS) 2>&1 | grep -E "error:|BUILD "
 
 # ── Lint & Format ─────────────────────────────────────────────────────────────
 
 lint: ## Run clippy + fmt check
-	cd $(TAURI_DIR) && cargo fmt -- --check
-	cd $(TAURI_DIR) && cargo clippy --all-features -- -D warnings
+	cd $(TAURI_DIR) && $(CARGO) fmt -- --check
+	cd $(TAURI_DIR) && $(CARGO) clippy --all-features -- -D warnings
 
 fmt: ## Auto-format Rust code
-	cd $(TAURI_DIR) && cargo fmt
+	cd $(TAURI_DIR) && $(CARGO) fmt
 
 check: ## Quick compilation check (no link)
-	cd $(TAURI_DIR) && cargo check --all-features
-	cd $(TOOL_DIR) && cargo check
+	cd $(TAURI_DIR) && $(CARGO) check --all-features 2>&1 | tail -3
+	cd $(TOOL_DIR) && $(CARGO) check 2>&1 | tail -2
 
 # ── XcodeGen ──────────────────────────────────────────────────────────────────
 
