@@ -5,6 +5,8 @@ import Network
 import Combine
 import OSLog
 
+// MARK: - Host list sync
+
 private let log = Logger(subsystem: "com.trackball-watch.app", category: "WatchRelay")
 
 /// Core service: receives TBP packets from Apple Watch via WatchConnectivity
@@ -34,6 +36,8 @@ final class WatchRelayService: NSObject, ObservableObject {
     private var backgroundTaskId: UIBackgroundTaskIdentifier = .invalid
     private var pairedDesktop: DesktopConfig?
 
+    private var cancellables = Set<AnyCancellable>()
+
     override private init() {
         super.init()
         // Load saved desktop config
@@ -52,6 +56,14 @@ final class WatchRelayService: NSObject, ObservableObject {
             desktopLinkState = .idle
         }
         isRunning = true
+
+        // Push initial host list and watch for changes so Watch stays in sync
+        pushHostListToWatch()
+        PairingService.shared.$connections
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.pushHostListToWatch() }
+            .store(in: &cancellables)
     }
 
     func stop() {
@@ -60,9 +72,34 @@ final class WatchRelayService: NSObject, ObservableObject {
         wcSession?.delegate = nil
         udpRelay?.cancel()
         udpRelay = nil
+        cancellables.removeAll()
         isRunning = false
         desktopLinkState = .idle
         endBackgroundTask()
+    }
+
+    /// Push full host list to Watch via applicationContext.
+    /// Delivered even when Watch app is not in foreground (unlike sendMessage).
+    func pushHostListToWatch() {
+        guard let session = wcSession, session.activationState == .activated else { return }
+        let configs = PairingService.shared.connections
+        guard !configs.isEmpty else { return }
+        let payload: [[String: Any]] = configs.map { [
+            "host": $0.host,
+            "port": Int($0.port),
+            "deviceId": $0.deviceId,
+            "name": $0.name
+        ]}
+        let context: [String: Any] = [
+            "hosts": payload,
+            "activeId": PairingService.shared.activeId ?? ""
+        ]
+        do {
+            try session.updateApplicationContext(context)
+            log.info("Pushed \(configs.count, privacy: .public) hosts to Watch via applicationContext")
+        } catch {
+            log.warning("Failed to push host list to Watch: \(error, privacy: .public)")
+        }
     }
 
     // MARK: - WatchConnectivity
