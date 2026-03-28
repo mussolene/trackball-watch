@@ -37,6 +37,7 @@ final class WatchRelayService: NSObject, ObservableObject {
     private var pairedDesktop: DesktopConfig?
 
     private var cancellables = Set<AnyCancellable>()
+    private var bonjourBrowser: BonjourBrowser?
 
     override private init() {
         super.init()
@@ -64,6 +65,16 @@ final class WatchRelayService: NSObject, ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.pushHostListToWatch() }
             .store(in: &cancellables)
+
+        // Scan local network and push discovered hosts to Watch
+        let browser = BonjourBrowser()
+        bonjourBrowser = browser
+        browser.$discovered
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.pushHostListToWatch() }
+            .store(in: &cancellables)
+        browser.start()
     }
 
     func stop() {
@@ -72,6 +83,8 @@ final class WatchRelayService: NSObject, ObservableObject {
         wcSession?.delegate = nil
         udpRelay?.cancel()
         udpRelay = nil
+        bonjourBrowser?.stop()
+        bonjourBrowser = nil
         cancellables.removeAll()
         isRunning = false
         desktopLinkState = .idle
@@ -82,21 +95,35 @@ final class WatchRelayService: NSObject, ObservableObject {
     /// Delivered even when Watch app is not in foreground (unlike sendMessage).
     func pushHostListToWatch() {
         guard let session = wcSession, session.activationState == .activated else { return }
-        let configs = PairingService.shared.connections
-        guard !configs.isEmpty else { return }
-        let payload: [[String: Any]] = configs.map { [
+
+        // Paired hosts (from manual pairing flow)
+        var payload: [[String: Any]] = PairingService.shared.connections.map { [
             "host": $0.host,
             "port": Int($0.port),
             "deviceId": $0.deviceId,
             "name": $0.name
         ]}
+
+        // Auto-discovered hosts (mDNS scan by iPhone) — add if not already in list
+        let pairedIds = Set(PairingService.shared.connections.map { $0.deviceId })
+        let discovered: [[String: Any]] = (bonjourBrowser?.discovered ?? [])
+            .filter { !pairedIds.contains($0.id) }
+            .map { [
+                "host": $0.host,
+                "port": Int($0.port),
+                "deviceId": $0.id,
+                "name": $0.name
+            ]}
+        payload += discovered
+
+        guard !payload.isEmpty else { return }
         let context: [String: Any] = [
             "hosts": payload,
             "activeId": PairingService.shared.activeId ?? ""
         ]
         do {
             try session.updateApplicationContext(context)
-            log.info("Pushed \(configs.count, privacy: .public) hosts to Watch via applicationContext")
+            log.info("Pushed \(payload.count, privacy: .public) hosts to Watch via applicationContext")
         } catch {
             log.warning("Failed to push host list to Watch: \(error, privacy: .public)")
         }

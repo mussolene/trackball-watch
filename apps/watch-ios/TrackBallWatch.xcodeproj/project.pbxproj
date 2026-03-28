@@ -23,10 +23,8 @@
 		8AA2EA37ABE2E6AA125B4040 /* InputCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0E1A73E7F41E6EEDA04E8A /* InputCaptureView.swift */; };
 		909AB776ACC5AB09CC1B54AC /* PairingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C486C920ED1977F7C4EFF6ED /* PairingService.swift */; };
 		9E4185B458617DC183F6D691 /* CrownHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B326015EEB6A33FBF6794E49 /* CrownHandler.swift */; };
-		AA11BB22CC33DD44EE550001 /* WatchBonjourBrowser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD44EE55FF660001 /* WatchBonjourBrowser.swift */; };
 		AA11BB22CC33DD44EE55FF66 /* SceneKitSphereView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB22CC33DD44EE55FF66AA11 /* SceneKitSphereView.swift */; };
 		CC11DD22EE33FF44AA55BB01 /* WatchUDPTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD22EE33FF44AA55BB66CC01 /* WatchUDPTransport.swift */; };
-		CC33DD44EE55FF6600110001 /* DiscoveryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD44EE55FF66001122330001 /* DiscoveryView.swift */; };
 		CF54F51A17BF81EA2A4F2E0A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF4C44109FA1418AD625839B /* Assets.xcassets */; };
 		D8ADB10918A47BEF7C423588 /* TBPPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4690BDE05C1A471AE47671C6 /* TBPPacket.swift */; };
 		E1EB92D31D7818BBDD387F6C /* TrackballView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FF930688960C83FFEE11E843 /* TrackballView.swift */; };
@@ -82,7 +80,6 @@
 		AC4AEEAC62E6D8C1F5460193 /* TrackBallCompanionApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackBallCompanionApp.swift; sourceTree = "<group>"; };
 		AF4C44109FA1418AD625839B /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B326015EEB6A33FBF6794E49 /* CrownHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CrownHandler.swift; sourceTree = "<group>"; };
-		BB22CC33DD44EE55FF660001 /* WatchBonjourBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBonjourBrowser.swift; sourceTree = "<group>"; };
 		EE55FF66001122334455AA01 /* TrackBallWatch.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TrackBallWatch.entitlements; sourceTree = "<group>"; };
 		BB22CC33DD44EE55FF66AA11 /* SceneKitSphereView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneKitSphereView.swift; sourceTree = "<group>"; };
 		BB6A78D32086A9E98710B38B /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -92,7 +89,6 @@
 		CA889BF8D52AD270939911AB /* TrackBallWatch-watchOS.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "TrackBallWatch-watchOS.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D653EECFEBB3888D4482D12F /* TrackBallWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackBallWatchApp.swift; sourceTree = "<group>"; };
 		DD22EE33FF44AA55BB66CC01 /* WatchUDPTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchUDPTransport.swift; sourceTree = "<group>"; };
-		DD44EE55FF66001122330001 /* DiscoveryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiscoveryView.swift; sourceTree = "<group>"; };
 		E68376256C65F4AA75614A21 /* WatchSessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchSessionManager.swift; sourceTree = "<group>"; };
 		E6E32A6F591E05E763C99D3B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		E7EDD5FEA2E7939EFCFE517D /* Local.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Local.xcconfig; sourceTree = "<group>"; };
@@ -130,9 +126,7 @@
 				DD22EE33FF44AA55BB66CC01 /* WatchUDPTransport.swift */,
 				FF44AA55BB66CC11DD22EE01 /* HostStore.swift */,
 				22334455667788990011BB01 /* HostPickerView.swift */,
-				BB22CC33DD44EE55FF660001 /* WatchBonjourBrowser.swift */,
 				EE55FF66001122334455AA01 /* TrackBallWatch.entitlements */,
-				DD44EE55FF66001122330001 /* DiscoveryView.swift */,
 				64DF2F8D3118E168DF4748B6 /* Tests */,
 			);
 			path = "TrackBallWatch Watch App";
@@ -335,8 +329,6 @@
 				CC11DD22EE33FF44AA55BB01 /* WatchUDPTransport.swift in Sources */,
 				EE33FF44AA55BB66CC11DD01 /* HostStore.swift in Sources */,
 				11223344556677889900AA01 /* HostPickerView.swift in Sources */,
-				AA11BB22CC33DD44EE550001 /* WatchBonjourBrowser.swift in Sources */,
-				CC33DD44EE55FF6600110001 /* DiscoveryView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
