@@ -69,6 +69,18 @@ build-watch: ## Build watchOS app standalone (debug)
 build-tools: ## Build latency-tester
 	cd $(TOOL_DIR) && cargo build --release
 
+install-desktop: build-desktop ## Build, copy to /Applications, deep-sign (fixes Accessibility TCC)
+	@APP="TrackBall Watch.app"; \
+	SRC=$$(find $(DESKTOP)/src-tauri/target/release/bundle/macos -maxdepth 1 -name "$$APP" 2>/dev/null | head -1); \
+	if [ -z "$$SRC" ]; then echo "error: app not found after build"; exit 1; fi; \
+	echo "==> Copying to /Applications..."; \
+	rm -rf "/Applications/$$APP"; \
+	cp -R "$$SRC" "/Applications/$$APP"; \
+	echo "==> Deep-signing (ad-hoc) so macOS TCC identifies the bundle consistently..."; \
+	codesign --force --deep --sign - --entitlements $(DESKTOP)/src-tauri/entitlements.plist "/Applications/$$APP"; \
+	echo "==> Installed. If Accessibility prompt does not appear, run:"; \
+	echo "    tccutil reset Accessibility com.trackballwatch.host"
+
 install-ios: ## Build & install iOS+Watch app on connected device (requires signed identity)
 	xcodebuild build \
 		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
