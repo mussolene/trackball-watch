@@ -70,8 +70,13 @@ if [[ -z "$APP_IOS" || ! -d "$APP_IOS" ]]; then
 fi
 
 APP_WATCH="$APP_IOS/Watch/TrackBallWatch-watchOS.app"
+# Fallback: standalone watchOS build artefact
 if [[ ! -d "$APP_WATCH" ]]; then
-  echo "error: embedded watch app missing: $APP_WATCH" >&2
+  APP_WATCH="$(find "$HOME/Library/Developer/Xcode/DerivedData/TrackBallWatch-"*/Build/Products/Debug-watchos \
+    -maxdepth 1 -name "TrackBallWatch-watchOS.app" 2>/dev/null | head -1)"
+fi
+if [[ -z "$APP_WATCH" || ! -d "$APP_WATCH" ]]; then
+  echo "error: watch app not found in DerivedData." >&2
   exit 1
 fi
 
