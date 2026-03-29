@@ -23,7 +23,7 @@
 		85FB0044E70EA13A8140C5A3 /* WatchSessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E68376256C65F4AA75614A21 /* WatchSessionManager.swift */; };
 		8AA2EA37ABE2E6AA125B4040 /* InputCaptureView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC0E1A73E7F41E6EEDA04E8A /* InputCaptureView.swift */; };
 		909AB776ACC5AB09CC1B54AC /* PairingService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C486C920ED1977F7C4EFF6ED /* PairingService.swift */; };
-		90A1B2C3D4E5F60718293A4B /* TrackballDebugView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A1B2C3D4E5F60718293A4A /* TrackballDebugView.swift */; };
+		90A1B2C3D4E5F60718293A4B /* TrackballRemoteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A1B2C3D4E5F60718293A4A /* TrackballRemoteView.swift */; };
 		90A1B2C3D4E5F60718293A4D /* DebugTBPPacket.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A1B2C3D4E5F60718293A4C /* DebugTBPPacket.swift */; };
 		90A1B2C3D4E5F60718293A4F /* TrackballInteractionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90A1B2C3D4E5F60718293A4E /* TrackballInteractionEngine.swift */; };
 		9E4185B458617DC183F6D691 /* CrownHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B326015EEB6A33FBF6794E49 /* CrownHandler.swift */; };
@@ -82,7 +82,7 @@
 		67A8B48E64F160CC1307DD51 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		8AD9323C1645866A4D9D4603 /* KineticTrackballSphere.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KineticTrackballSphere.swift; sourceTree = "<group>"; };
 		8CD57AEEDFD5CAE7A8DCC574 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
-		90A1B2C3D4E5F60718293A4A /* TrackballDebugView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackballDebugView.swift; sourceTree = "<group>"; };
+		90A1B2C3D4E5F60718293A4A /* TrackballRemoteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrackballRemoteView.swift; sourceTree = "<group>"; };
 		90A1B2C3D4E5F60718293A4C /* DebugTBPPacket.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugTBPPacket.swift; sourceTree = "<group>"; };
 		90A1B2C3D4E5F60718293A4E /* TrackballInteractionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = TrackballInteractionEngine.swift; path = Shared/TrackballInteractionEngine.swift; sourceTree = SOURCE_ROOT; };
 		AC0A0B2CC74688B06B2EF3AC /* BonjourBrowser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BonjourBrowser.swift; sourceTree = "<group>"; };
@@ -180,7 +180,7 @@
 				8CD57AEEDFD5CAE7A8DCC574 /* MainView.swift */,
 				C486C920ED1977F7C4EFF6ED /* PairingService.swift */,
 				90A1B2C3D4E5F60718293A4C /* DebugTBPPacket.swift */,
-				90A1B2C3D4E5F60718293A4A /* TrackballDebugView.swift */,
+				90A1B2C3D4E5F60718293A4A /* TrackballRemoteView.swift */,
 				AC4AEEAC62E6D8C1F5460193 /* TrackBallCompanionApp.swift */,
 				13E0FACA0F09632816FFF1E4 /* UDPRelay.swift */,
 				3C2CA0A4FFFB8ED2776BFAE2 /* WatchRelayService.swift */,
@@ -321,7 +321,7 @@
 				909AB776ACC5AB09CC1B54AC /* PairingService.swift in Sources */,
 				90A1B2C3D4E5F60718293A4D /* DebugTBPPacket.swift in Sources */,
 				90A1B2C3D4E5F60718293A4F /* TrackballInteractionEngine.swift in Sources */,
-				90A1B2C3D4E5F60718293A4B /* TrackballDebugView.swift in Sources */,
+				90A1B2C3D4E5F60718293A4B /* TrackballRemoteView.swift in Sources */,
 				5799F9B6C471BA23750B635D /* TrackBallCompanionApp.swift in Sources */,
 				67ECD0F82066EC4009DD0387 /* UDPRelay.swift in Sources */,
 				62439ABC39492A84DBF64A50 /* WatchRelayService.swift in Sources */,

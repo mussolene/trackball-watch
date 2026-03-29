@@ -68,7 +68,7 @@ struct MainView: View {
 
                 Section("Additional Input") {
                     NavigationLink {
-                        TrackballDebugView()
+                        TrackballRemoteView()
                     } label: {
                         Label("Trackball Remote", systemImage: "dot.squareshape.split.2x2")
                     }

@@ -2,7 +2,8 @@ import SwiftUI
 import UIKit
 import simd
 
-struct TrackballDebugView: View {
+/// iPhone screen for testing the shared trackball engine and relaying to the desktop host.
+struct TrackballRemoteView: View {
     @StateObject private var relay = WatchRelayService.shared
     @StateObject private var pairing = PairingService.shared
     @StateObject private var engine = TrackballInteractionEngine()
@@ -312,7 +313,7 @@ struct TrackballDebugView: View {
     private func sendTouch(phase: TrackballEngineTouchPhase, x: Int16, y: Int16, pressure: UInt8) {
         guard sendToDesktop else { return }
         ensureDesktopRelayReady()
-        relay.relay(packetBuilder.touch(phase: debugTouchPhase(phase), x: x, y: y, pressure: pressure))
+        relay.relay(packetBuilder.touch(phase: companionTouchPhase(phase), x: x, y: y, pressure: pressure))
     }
 
     private func sendFling(vx: Int16, vy: Int16) {
@@ -327,7 +328,7 @@ struct TrackballDebugView: View {
         relay.relay(packetBuilder.gesture(gesture))
     }
 
-    private func debugTouchPhase(_ phase: TrackballEngineTouchPhase) -> DebugTouchPhase {
+    private func companionTouchPhase(_ phase: TrackballEngineTouchPhase) -> DebugTouchPhase {
         switch phase {
         case .began:
             return .began
@@ -394,6 +395,8 @@ private struct TrackballRemoteSurface: View {
     }
 }
 
+// MARK: - Globe grid (orthographic projection)
+
 private struct TrackballGlobeView: View {
     let orientation: simd_quatd
     let diameter: CGFloat
@@ -431,37 +434,43 @@ private struct TrackballGlobeView: View {
                 lineWidth: 1
             )
 
+            // Parallels: full small circles (latitude constant), closed.
             for latitude in stride(from: -80.0, through: 80.0, by: 10.0) {
                 strokeProjectedCircle(
                     context: &context,
                     center: center,
                     radius: radius,
-                    samples: latitudeCircle(latitudeDegrees: latitude),
-                    color: Color.white.opacity(0.17),
-                    lineWidth: max(0.8, diameter * 0.004)
+                    orientation: orientation,
+                    samples: parallelSamples(latitudeDegrees: latitude),
+                    color: Color.white.opacity(0.2),
+                    lineWidth: max(0.7, diameter * 0.0035),
+                    closed: true
                 )
             }
 
+            // Meridians: full great circles (two semicircles at φ and φ+180°), closed.
             for longitude in stride(from: 0.0, through: 170.0, by: 10.0) {
                 strokeProjectedCircle(
                     context: &context,
                     center: center,
                     radius: radius,
-                    samples: longitudeCircle(longitudeDegrees: longitude),
-                    color: Color.white.opacity(0.22),
-                    lineWidth: max(0.8, diameter * 0.0045)
+                    orientation: orientation,
+                    samples: meridianSamples(longitudeDegrees: longitude),
+                    color: Color.white.opacity(0.26),
+                    lineWidth: max(0.75, diameter * 0.004),
+                    closed: true
                 )
             }
-
         }
         .frame(width: diameter, height: diameter)
     }
 
-    private func latitudeCircle(latitudeDegrees: Double) -> [SIMD3<Double>] {
+    /// Unit-sphere points on a parallel (latitude fixed, longitude sweeps 360°).
+    private func parallelSamples(latitudeDegrees: Double) -> [SIMD3<Double>] {
         let latitude = latitudeDegrees * .pi / 180.0
         let y = sin(latitude)
         let ringRadius = cos(latitude)
-        return stride(from: 0.0, through: 360.0, by: 6.0).map { angleDegrees in
+        return stride(from: 0.0, through: 355.0, by: 5.0).map { angleDegrees in
             let angle = angleDegrees * .pi / 180.0
             return SIMD3<Double>(
                 ringRadius * cos(angle),
@@ -471,59 +480,89 @@ private struct TrackballGlobeView: View {
         }
     }
 
-    private func longitudeCircle(longitudeDegrees: Double) -> [SIMD3<Double>] {
-        let longitude = longitudeDegrees * .pi / 180.0
-        return stride(from: -90.0, through: 90.0, by: 4.0).map { latitudeDegrees in
-            let latitude = latitudeDegrees * .pi / 180.0
-            let x = cos(latitude) * cos(longitude)
-            let y = sin(latitude)
-            let z = cos(latitude) * sin(longitude)
-            return SIMD3<Double>(x, y, z)
+    /// Full meridian = two pole-to-pole semicircles (φ and φ+π); one half alone only draws 180° of the great circle.
+    private func meridianSamples(longitudeDegrees: Double) -> [SIMD3<Double>] {
+        let lon = longitudeDegrees * .pi / 180.0
+        let lonOpp = lon + .pi
+        let step: Double = 5.0
+        var pts: [SIMD3<Double>] = []
+        var lat = -90.0
+        while lat <= 90.0 + 1e-6 {
+            pts.append(sphericalUnit(latitudeDegrees: lat, longitudeRadians: lon))
+            lat += step
         }
+        lat = 90.0 - step
+        while lat >= -90.0 {
+            pts.append(sphericalUnit(latitudeDegrees: lat, longitudeRadians: lonOpp))
+            lat -= step
+        }
+        return pts
     }
 
+    private func sphericalUnit(latitudeDegrees: Double, longitudeRadians: Double) -> SIMD3<Double> {
+        let lat = latitudeDegrees * .pi / 180.0
+        return SIMD3<Double>(
+            cos(lat) * cos(longitudeRadians),
+            sin(lat),
+            cos(lat) * sin(longitudeRadians)
+        )
+    }
+
+    /// Orthographic projection of a circle on the sphere: stroke edge segments; `closed` connects last→first.
     private func strokeProjectedCircle(
         context: inout GraphicsContext,
         center: CGPoint,
         radius: CGFloat,
+        orientation: simd_quatd,
         samples: [SIMD3<Double>],
         color: Color,
-        lineWidth: CGFloat
+        lineWidth: CGFloat,
+        closed: Bool
     ) {
-        guard !samples.isEmpty else { return }
+        let n = samples.count
+        guard n >= 2 else { return }
+
+        let edgeCount = closed ? n : n - 1
+        guard edgeCount >= 1 else { return }
 
         var frontPath = Path()
         var backPath = Path()
-        var frontStarted = false
-        var backStarted = false
+        var drawingFront: Bool?
+        var drawingBack: Bool?
 
-        for point in samples {
-            let rotated = orientation.act(point)
-            let projected = CGPoint(
-                x: center.x + CGFloat(rotated.x) * radius,
-                y: center.y - CGFloat(rotated.y) * radius
+        for i in 0 ..< edgeCount {
+            let i0 = i % n
+            let i1 = (i + 1) % n
+            let r0 = orientation.act(samples[i0])
+            let r1 = orientation.act(samples[i1])
+            let p0 = CGPoint(
+                x: center.x + CGFloat(r0.x) * radius,
+                y: center.y - CGFloat(r0.y) * radius
             )
+            let p1 = CGPoint(
+                x: center.x + CGFloat(r1.x) * radius,
+                y: center.y - CGFloat(r1.y) * radius
+            )
+            let onFront = (r0.z + r1.z) * 0.5 >= 0
 
-            if rotated.z >= 0 {
-                if frontStarted {
-                    frontPath.addLine(to: projected)
-                } else {
-                    frontPath.move(to: projected)
-                    frontStarted = true
+            if onFront {
+                if drawingFront != true {
+                    frontPath.move(to: p0)
+                    drawingFront = true
+                    drawingBack = false
                 }
-                backStarted = false
+                frontPath.addLine(to: p1)
             } else {
-                if backStarted {
-                    backPath.addLine(to: projected)
-                } else {
-                    backPath.move(to: projected)
-                    backStarted = true
+                if drawingBack != true {
+                    backPath.move(to: p0)
+                    drawingBack = true
+                    drawingFront = false
                 }
-                frontStarted = false
+                backPath.addLine(to: p1)
             }
         }
 
-        context.stroke(backPath, with: .color(color.opacity(0.72)), lineWidth: lineWidth)
+        context.stroke(backPath, with: .color(color.opacity(0.55)), lineWidth: lineWidth)
         context.stroke(frontPath, with: .color(color), lineWidth: lineWidth)
     }
 }
