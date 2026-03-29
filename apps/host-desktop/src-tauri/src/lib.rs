@@ -868,34 +868,45 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
             let mut s = state.lock().unwrap();
             match GestureType::try_from(payload.gesture_type).ok() {
                 Some(GestureType::Tap) => {
+                    log::info!("Gesture received: tap");
                     drop(s);
                     dispatch_input_action(app, || {
                         match injector::create_injector() {
                             Ok(i) => {
-                                let _ = i.left_click();
+                                if let Err(e) = i.left_click() {
+                                    log::warn!("Left click injection failed: {}", e);
+                                }
                             }
                             Err(e) => log::warn!("Injector unavailable: {}", e),
                         }
                     });
                 }
                 Some(GestureType::DoubleTap) => {
+                    log::info!("Gesture received: double tap");
                     drop(s);
                     dispatch_input_action(app, || {
                         match injector::create_injector() {
                             Ok(i) => {
-                                let _ = i.left_click();
-                                let _ = i.left_click();
+                                if let Err(e) = i.left_click() {
+                                    log::warn!("First double-click injection failed: {}", e);
+                                }
+                                if let Err(e) = i.left_click() {
+                                    log::warn!("Second double-click injection failed: {}", e);
+                                }
                             }
                             Err(e) => log::warn!("Injector unavailable: {}", e),
                         }
                     });
                 }
                 Some(GestureType::LongPress) => {
+                    log::info!("Gesture received: long press");
                     drop(s);
                     dispatch_input_action(app, || {
                         match injector::create_injector() {
                             Ok(i) => {
-                                let _ = i.right_click();
+                                if let Err(e) = i.right_click() {
+                                    log::warn!("Right click injection failed: {}", e);
+                                }
                             }
                             Err(e) => log::warn!("Injector unavailable: {}", e),
                         }

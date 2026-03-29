@@ -106,6 +106,7 @@ final class TrackballInteractionEngine: ObservableObject {
         defer { isDragging = false }
 
         let point = location
+        let tapDistanceThreshold = max(tapMaxDistance, diameter * 0.08)
         let distance = hypot(point.x - dragStart.x, point.y - dragStart.y)
         let duration = Date().timeIntervalSince(dragStartTime)
 
@@ -114,12 +115,12 @@ final class TrackballInteractionEngine: ObservableObject {
             return [touchEvent(.ended)]
         }
 
-        if distance < tapMaxDistance && duration >= longPressMinDuration {
+        if distance < tapDistanceThreshold && duration >= longPressMinDuration {
             lastTapAt = .distantPast
             return [.longPress, touchEvent(.ended)]
         }
 
-        if distance < tapMaxDistance && duration < tapMaxDuration {
+        if distance < tapDistanceThreshold && duration < tapMaxDuration {
             return tapEvents() + [touchEvent(.ended)]
         }
 

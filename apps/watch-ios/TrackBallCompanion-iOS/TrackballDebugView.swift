@@ -12,6 +12,7 @@ struct TrackballDebugView: View {
     @State private var showAdvancedTuning = false
     @State private var localTrackballFriction = 0.96
     @State private var deferTouchEndUntilCoastStops = false
+    @State private var lastGesture = "None"
 
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -130,6 +131,7 @@ struct TrackballDebugView: View {
             )
             statRow("Desktop Link", value: desktopLinkText)
             statRow("Packets Relayed", value: "\(relay.packetsRelayed)")
+            statRow("Last Gesture", value: lastGesture)
         }
         .padding(16)
         .background(
@@ -230,15 +232,19 @@ struct TrackballDebugView: View {
                 sendTouch(phase: phase, x: x, y: y, pressure: pressure)
             case .tap:
                 tapFeedback.impactOccurred(intensity: 0.7)
+                lastGesture = "Tap"
                 sendGesture(.tap)
             case .doubleTap:
                 doubleTapFeedback.impactOccurred(intensity: 0.9)
+                lastGesture = "Double Tap"
                 sendGesture(.doubleTap)
             case .longPress:
                 impactFeedback.impactOccurred(intensity: 0.85)
+                lastGesture = "Long Press"
                 sendGesture(.longPress)
             case let .fling(vx, vy):
                 impactFeedback.impactOccurred(intensity: 0.7)
+                lastGesture = "Fling"
                 sendFling(vx: vx, vy: vy)
             }
         }
@@ -263,18 +269,22 @@ struct TrackballDebugView: View {
                 }
             case .tap:
                 tapFeedback.impactOccurred(intensity: 0.7)
+                lastGesture = "Tap"
                 sendGesture(.tap)
                 deferTouchEndUntilCoastStops = false
             case .doubleTap:
                 doubleTapFeedback.impactOccurred(intensity: 0.9)
+                lastGesture = "Double Tap"
                 sendGesture(.doubleTap)
                 deferTouchEndUntilCoastStops = false
             case .longPress:
                 impactFeedback.impactOccurred(intensity: 0.85)
+                lastGesture = "Long Press"
                 sendGesture(.longPress)
                 deferTouchEndUntilCoastStops = false
             case let .fling(vx, vy):
                 impactFeedback.impactOccurred(intensity: 0.7)
+                lastGesture = "Fling"
                 if !deferTouchEndUntilCoastStops {
                     sendFling(vx: vx, vy: vy)
                 }
@@ -421,7 +431,7 @@ private struct TrackballGlobeView: View {
                 lineWidth: 1
             )
 
-            for latitude in stride(from: -75.0, through: 75.0, by: 15.0) {
+            for latitude in stride(from: -80.0, through: 80.0, by: 10.0) {
                 strokeProjectedCircle(
                     context: &context,
                     center: center,
@@ -432,7 +442,7 @@ private struct TrackballGlobeView: View {
                 )
             }
 
-            for longitude in stride(from: 0.0, through: 165.0, by: 15.0) {
+            for longitude in stride(from: 0.0, through: 170.0, by: 10.0) {
                 strokeProjectedCircle(
                     context: &context,
                     center: center,
@@ -443,16 +453,6 @@ private struct TrackballGlobeView: View {
                 )
             }
 
-            let highlightRect = CGRect(
-                x: center.x - radius * 0.40,
-                y: center.y - radius * 0.42,
-                width: radius * 0.36,
-                height: radius * 0.24
-            )
-            context.fill(
-                Path(ellipseIn: highlightRect),
-                with: .color(Color.white.opacity(0.16))
-            )
         }
         .frame(width: diameter, height: diameter)
     }

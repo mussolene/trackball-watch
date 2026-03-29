@@ -145,18 +145,14 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
         // Longitude grid
         ctx.setStrokeColor(grid)
         ctx.setLineWidth(max(1.0, w * 0.008))
-        for x in stride(from: w * 0.08, through: w * 0.92, by: w * 0.14) {
+        for x in stride(from: w * 0.06, through: w * 0.94, by: w * 0.08) {
             ctx.strokeEllipse(in: CGRect(x: x - w * 0.18, y: w * 0.10, width: w * 0.36, height: w * 0.80))
         }
 
         // Latitude grid
-        for y in stride(from: w * 0.18, through: w * 0.82, by: w * 0.16) {
+        for y in stride(from: w * 0.14, through: w * 0.86, by: w * 0.10) {
             ctx.strokeEllipse(in: CGRect(x: w * 0.10, y: y - w * 0.10, width: w * 0.80, height: w * 0.20))
         }
-
-        // Specular lobe
-        ctx.setFillColor(white.copy(alpha: 0.14)!)
-        ctx.fillEllipse(in: CGRect(x: w * 0.22, y: w * 0.18, width: w * 0.22, height: w * 0.15))
 
         guard let cgImage = ctx.makeImage() else { return nil }
         return UIImage(cgImage: cgImage)
@@ -176,10 +172,10 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
         let gridGlow = CGColor(red: 0.86, green: 0.92, blue: 1.0, alpha: 0.10)
         ctx.setStrokeColor(gridGlow)
         ctx.setLineWidth(max(0.8, w * 0.005))
-        for x in stride(from: w * 0.08, through: w * 0.92, by: w * 0.14) {
+        for x in stride(from: w * 0.06, through: w * 0.94, by: w * 0.08) {
             ctx.strokeEllipse(in: CGRect(x: x - w * 0.18, y: w * 0.10, width: w * 0.36, height: w * 0.80))
         }
-        for y in stride(from: w * 0.18, through: w * 0.82, by: w * 0.16) {
+        for y in stride(from: w * 0.14, through: w * 0.86, by: w * 0.10) {
             ctx.strokeEllipse(in: CGRect(x: w * 0.10, y: y - w * 0.10, width: w * 0.80, height: w * 0.20))
         }
 
