@@ -1,6 +1,6 @@
 # TrackBall Watch
 
-Turn your **Apple Watch 7** into a precision trackball and trackpad — no extra hardware required.
+Turn your Apple Watch into a precision input device for a cross-platform desktop host.
 
 [![CI](https://github.com/your-org/trackball-watch/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/trackball-watch/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/your-org/trackball-watch)](https://github.com/your-org/trackball-watch/releases)
@@ -149,7 +149,7 @@ npm run tauri build      # production
 ### Build Watch + iPhone Apps
 
 Open `apps/watch-ios/TrackBallWatch.xcodeproj` in Xcode.
-Open `apps/companion-ios/TrackBallCompanion.xcodeproj` in Xcode.
+The iPhone companion and Apple Watch app live in the same Xcode project and ship as one Apple mobile bundle.
 
 ### Run Tests
 
@@ -196,9 +196,9 @@ Protocol spec: [shared/protocol/tbp_spec.md](shared/protocol/tbp_spec.md)
 | Phase | Target | Features |
 |-------|--------|---------|
 | **1.0** ✅ | macOS + Windows | Trackpad, Trackball, Apple Watch 7 |
-| **2.0** | Wear OS, Linux | BLE HID fallback, Gesture Controller mode |
-| **3.0** | Spatial | IMU sensor fusion, multi-device |
-| **4.0** | Platform | Plugin API, App Store, Enterprise MDM |
+| **2.0** | Wearable clients | Additional watch/device clients as sibling apps |
+| **3.0** | Voice input | Wrist dictation, correction, command extraction |
+| **4.0** | Assistant layer | Validation, proxy-assisted input, task/event capture |
 
 ---
 

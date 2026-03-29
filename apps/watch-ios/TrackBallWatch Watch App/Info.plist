@@ -13,17 +13,11 @@
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>1.0</string>
+	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleVersion</key>
-	<string>6</string>
-	<key>NSNearbyInteractionAllowOnceUsageDescription</key>
-	<string></string>
-	<key>NSNearbyInteractionUsageDescription</key>
-	<string>using multicast</string>
-	<key>NSBonjourServices</key>
-	<array>
-		<string>_tbp._udp</string>
-	</array>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Used to send input events directly to TrackBall Watch desktop app over Wi-Fi</string>
 	<key>WKApplication</key>
 	<true/>
 	<key>WKCompanionAppBundleIdentifier</key>

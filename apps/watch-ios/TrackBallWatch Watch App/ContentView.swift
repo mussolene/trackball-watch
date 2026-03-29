@@ -45,10 +45,12 @@ struct ContentView: View {
                 if sessionManager.mode == .trackball {
                     TrackballView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .crownScrollHandler()
                 } else {
                     InputCaptureView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Color.black.opacity(0.01))
+                        .crownScrollHandler()
                 }
             }
             .padding(4)

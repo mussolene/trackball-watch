@@ -13,8 +13,8 @@ struct CrownHandlerModifier: ViewModifier {
         content
             .digitalCrownRotation(
                 $crownValue,
-                from: -Double.infinity,
-                through: Double.infinity,
+                from: -1_000_000.0,
+                through: 1_000_000.0,
                 by: 1.0,
                 sensitivity: .medium,
                 isContinuous: true,

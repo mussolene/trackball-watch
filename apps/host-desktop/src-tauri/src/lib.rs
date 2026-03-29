@@ -135,7 +135,7 @@ fn save_config(
         s.one_euro_dx = OneEuroFilter::new(60.0, mc, beta, 1.0);
         s.one_euro_dy = OneEuroFilter::new(60.0, mc, beta, 1.0);
         s.config = config;
-        if let (Some(tx), Some(_)) = (s.udp_tx.clone(), s.connected_peer.as_ref()) {
+        if let Some(tx) = s.udp_tx.clone() {
             pending_mode_push = Some((tx, s.config.mode, s.config.hand, s.config.trackball_friction));
         }
     }
@@ -643,15 +643,19 @@ fn pairing_pin(host: &str, port: u16) -> String {
     format!("{:06}", value % 1_000_000)
 }
 
-/// Synthetic pointer events must run on the AppKit main thread; UDP/Tokio use a background runtime.
+/// Dispatch a cursor/input action.
+///
+/// CGEventCreate/CGEventPost are CoreGraphics (not AppKit) and are
+/// documented thread-safe — they can be called from any OS thread,
+/// including Tokio workers and background coast threads.
+/// Posting to the main-thread run-loop (run_on_main_thread) was adding
+/// up to one full display frame (~16 ms) of extra latency per event.
 #[cfg(target_os = "macos")]
-fn dispatch_input_action<F>(app: &tauri::AppHandle, f: F)
+fn dispatch_input_action<F>(_app: &tauri::AppHandle, f: F)
 where
     F: FnOnce() + Send + 'static,
 {
-    if let Err(e) = app.run_on_main_thread(f) {
-        log::warn!("dispatch_input_action: main-thread dispatch failed: {}", e);
-    }
+    f()
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -668,12 +672,12 @@ fn trackball_coast_step(state: &Arc<Mutex<AppState>>, dt: f64, app: &tauri::AppH
         Ok(g) => g,
         Err(_) => return,
     };
-    if s.config.mode != InputMode::Trackball || !s.trackball.coasting {
+    if s.config.mode != InputMode::Trackball || !s.trackball.is_active() {
         return;
     }
     let (dx, dy) = s.trackball.tick(dt);
-    if dx == 0.0 && dy == 0.0 {
-        // Coasting just stopped — send one final feedback so watch stops animating
+    if dx == 0.0 && dy == 0.0 && !s.trackball.is_active() {
+        // Motion just stopped — send one final feedback so watch stops animating
         if let Some(tx) = s.udp_tx.clone() {
             drop(s);
             let _ = send_state_feedback(&tx, false, 0.0, 0.0);
@@ -705,6 +709,163 @@ fn trackball_coast_step(state: &Arc<Mutex<AppState>>, dt: f64, app: &tauri::AppH
     if let Some(tx) = udp_tx {
         let _ = send_state_feedback(&tx, is_coasting, vx, vy);
     }
+}
+
+fn reset_touch_pipeline(s: &mut AppState) {
+    s.kalman.reset();
+    s.smoothed_dx = 0.0;
+    s.smoothed_dy = 0.0;
+    s.last_raw_x = 0.0;
+    s.last_raw_y = 0.0;
+    s.last_touch_x = 0.0;
+    s.last_touch_y = 0.0;
+    s.one_euro_dx.reset();
+    s.one_euro_dy.reset();
+    s.last_touch_time = None;
+}
+
+fn process_trackpad_touch(
+    s: &mut AppState,
+    payload: protocol::packets::TouchPayload,
+) -> Option<(f64, f64)> {
+    let phase = TouchPhase::try_from(payload.phase).unwrap_or(TouchPhase::Moved);
+
+    if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+        reset_touch_pipeline(s);
+        s.trackball.stop();
+        return None;
+    }
+
+    let x = payload.x as f64;
+    let y = payload.y as f64;
+
+    if phase == TouchPhase::Began {
+        s.trackball.stop();
+        let _ = s.kalman.update(x, y);
+        s.last_raw_x = x;
+        s.last_raw_y = y;
+        s.last_touch_x = x;
+        s.last_touch_y = y;
+        s.one_euro_dx.reset();
+        s.one_euro_dy.reset();
+        s.last_touch_time = None;
+        return None;
+    }
+
+    let mut dx = x - s.last_raw_x;
+    let mut dy = y - s.last_raw_y;
+    s.last_raw_x = x;
+    s.last_raw_y = y;
+    s.last_touch_x = x;
+    s.last_touch_y = y;
+
+    let user_scale = s.config.sensitivity.max(0.05);
+    dx *= user_scale;
+    dy *= user_scale;
+
+    let p = payload.pressure;
+    if p > 0 {
+        let gain = 0.4 + 0.6 * (p as f64 / 255.0);
+        dx *= gain;
+        dy *= gain;
+    }
+
+    const MAX_DELTA: f64 = 8000.0;
+    let speed = (dx * dx + dy * dy).sqrt();
+    let jitter_deadzone = if speed < 120.0 {
+        8.0
+    } else if speed < 420.0 {
+        4.0
+    } else {
+        1.0
+    };
+    if speed < jitter_deadzone {
+        return None;
+    }
+    dx = dx.clamp(-MAX_DELTA, MAX_DELTA);
+    dy = dy.clamp(-MAX_DELTA, MAX_DELTA);
+
+    let now = std::time::Instant::now();
+    let dt = s.last_touch_time
+        .map(|t| now.duration_since(t).as_secs_f64().clamp(0.004, 0.1))
+        .unwrap_or(1.0 / 60.0);
+    s.last_touch_time = Some(now);
+    dx = s.one_euro_dx.filter_dt(dx, dt);
+    dy = s.one_euro_dy.filter_dt(dy, dt);
+
+    let cfg = s.config.accel;
+    let (sx, sy) = engine::accel::apply_curve_2d(dx, dy, &cfg);
+    if sx * sx + sy * sy < 1e-8 {
+        return None;
+    }
+
+    Some((sx, sy))
+}
+
+fn process_trackball_touch(s: &mut AppState, payload: protocol::packets::TouchPayload) {
+    let phase = TouchPhase::try_from(payload.phase).unwrap_or(TouchPhase::Moved);
+
+    if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+        s.trackball.end_touch();
+        reset_touch_pipeline(s);
+        return;
+    }
+
+    let x = payload.x as f64;
+    let y = payload.y as f64;
+
+    if phase == TouchPhase::Began {
+        s.trackball.begin_touch();
+        s.last_raw_x = x;
+        s.last_raw_y = y;
+        s.last_touch_x = x;
+        s.last_touch_y = y;
+        s.one_euro_dx.reset();
+        s.one_euro_dy.reset();
+        s.last_touch_time = None;
+        return;
+    }
+
+    let mut dx = x - s.last_raw_x;
+    let mut dy = y - s.last_raw_y;
+    s.last_raw_x = x;
+    s.last_raw_y = y;
+    s.last_touch_x = x;
+    s.last_touch_y = y;
+
+    let speed = (dx * dx + dy * dy).sqrt();
+    let jitter_deadzone = if speed < 60.0 { 1.0 } else { 0.0 };
+    if speed < jitter_deadzone {
+        return;
+    }
+
+    let now = std::time::Instant::now();
+    let dt = s.last_touch_time
+        .map(|t| now.duration_since(t).as_secs_f64().clamp(0.004, 0.1))
+        .unwrap_or(1.0 / 60.0);
+    s.last_touch_time = Some(now);
+
+    dx = s.one_euro_dx.filter_dt(dx, dt);
+    dy = s.one_euro_dy.filter_dt(dy, dt);
+
+    let user_scale = s.config.sensitivity.max(0.05);
+    dx *= user_scale;
+    dy *= user_scale;
+
+    let p = payload.pressure;
+    if p > 0 {
+        let gain = 0.7 + 0.5 * (p as f64 / 255.0);
+        dx *= gain;
+        dy *= gain;
+    }
+
+    let cfg = s.config.accel;
+    let (sx, sy) = engine::accel::apply_curve_2d(dx, dy, &cfg);
+    if sx * sx + sy * sy < 1e-8 {
+        return;
+    }
+
+    s.trackball.drive(sx, sy);
 }
 
 // ── Input event handler ───────────────────────────────────────────────────────
@@ -761,15 +922,8 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
             {
                 let mut s = state.lock().unwrap();
                 s.connected_peer = None;
-                s.kalman.reset();
                 s.trackball.stop();
-                s.smoothed_dx = 0.0;
-                s.smoothed_dy = 0.0;
-                s.one_euro_dx.reset();
-                s.one_euro_dy.reset();
-                s.last_raw_x = 0.0;
-                s.last_raw_y = 0.0;
-                s.last_touch_time = None;
+                reset_touch_pipeline(&mut s);
             }
             let payload = ConnectionStatusPayload {
                 state: "disconnected".into(),
@@ -783,111 +937,23 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
 
         InputEvent::Touch(_, payload) => {
             let mut s = state.lock().unwrap();
-            let phase = TouchPhase::try_from(payload.phase).unwrap_or(TouchPhase::Moved);
-
-            if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
-                s.kalman.reset();
-                // In trackball mode a FLING gesture may follow this touch-end; stopping here
-                // would cancel coasting immediately. New touch began stops inertia instead.
-                if s.config.mode != InputMode::Trackball {
-                    s.trackball.stop();
-                }
-                s.smoothed_dx = 0.0;
-                s.smoothed_dy = 0.0;
-                s.last_raw_x = 0.0;
-                s.last_raw_y = 0.0;
-                return;
-            }
-
-            let x = payload.x as f64;
-            let y = payload.y as f64;
-
-            if phase == TouchPhase::Began {
-                s.trackball.stop();
-                let _ = s.kalman.update(x, y);
-                s.last_raw_x = x;
-                s.last_raw_y = y;
-                s.last_touch_x = x;
-                s.last_touch_y = y;
-                s.smoothed_dx = 0.0;
-                s.smoothed_dy = 0.0;
-                s.one_euro_dx.reset();
-                s.one_euro_dy.reset();
-                s.last_touch_time = None;
-                return;
-            }
-
-            // Raw delta between successive samples. Kalman on absolute position was crushing
-            // per-frame deltas (filtered position barely moves), which made the cursor stick.
-            let mut dx = x - s.last_raw_x;
-            let mut dy = y - s.last_raw_y;
-            s.last_raw_x = x;
-            s.last_raw_y = y;
-            s.last_touch_x = x;
-            s.last_touch_y = y;
-
-            // Global sensitivity slider × accel curve sensitivity (UI updates `sensitivity`).
-            let user_scale = s.config.sensitivity.max(0.05);
-            dx *= user_scale;
-            dy *= user_scale;
-
-            // Pressure 1–255 scales delta; 0 leaves gain off (e.g. trackpad sends no pressure).
-            let p = payload.pressure;
-            if p > 0 {
-                let gain = 0.4 + 0.6 * (p as f64 / 255.0);
-                dx *= gain;
-                dy *= gain;
-            }
-
-            // Adaptive deadzone:
-            // - Trackpad: heavier deadzone to suppress finger contact noise
-            // - Trackball: minimal deadzone; One-Euro handles jitter naturally
-            const MAX_DELTA: f64 = 8000.0;
-            let speed = (dx * dx + dy * dy).sqrt();
-            let jitter_deadzone = if s.config.mode == InputMode::Trackpad {
-                if speed < 120.0 {
-                    18.0
-                } else if speed < 420.0 {
-                    10.0
-                } else {
-                    4.0
-                }
-            } else {
-                // Trackball: only suppress digitizer noise floor
-                if speed < 60.0 { 2.0 } else { 0.0 }
-            };
-
-            // Deadzone on magnitude — avoids axis-snapping on diagonal slow moves
-            if speed < jitter_deadzone {
-                return;
-            }
-            dx = dx.clamp(-MAX_DELTA, MAX_DELTA);
-            dy = dy.clamp(-MAX_DELTA, MAX_DELTA);
-
-            // One-Euro filter with actual inter-packet dt for correct frequency estimation.
-            let now = std::time::Instant::now();
-            let dt = s.last_touch_time
-                .map(|t| now.duration_since(t).as_secs_f64().clamp(0.004, 0.1))
-                .unwrap_or(1.0 / 60.0);
-            s.last_touch_time = Some(now);
-            dx = s.one_euro_dx.filter_dt(dx, dt);
-            dy = s.one_euro_dy.filter_dt(dy, dt);
-
-            let cfg = s.config.accel;
-            let (sx, sy) = engine::accel::apply_curve_2d(dx, dy, &cfg);
-            // Drop only true noise in *screen* space; old per-axis 0.5 in TBP units caused stair-stepping.
-            if sx * sx + sy * sy < 1e-8 {
-                return;
-            }
-            drop(s);
-            dispatch_input_action(app, move || {
-                match injector::create_injector() {
-                    Ok(inj) => {
-                        let _ = inj.move_relative(sx, sy);
+            match s.config.mode {
+                InputMode::Trackpad => {
+                    let output = process_trackpad_touch(&mut s, payload);
+                    drop(s);
+                    if let Some((sx, sy)) = output {
+                        dispatch_input_action(app, move || match injector::create_injector() {
+                            Ok(inj) => {
+                                let _ = inj.move_relative(sx, sy);
+                            }
+                            Err(e) => log::warn!("Injector unavailable: {}", e),
+                        });
                     }
-                    Err(e) => log::warn!("Injector unavailable: {}", e),
                 }
-            });
+                InputMode::Trackball => {
+                    process_trackball_touch(&mut s, payload);
+                }
+            }
         }
 
         InputEvent::Gesture(_, payload) => {

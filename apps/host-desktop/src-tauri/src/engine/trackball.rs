@@ -10,8 +10,14 @@ pub struct TrackballState {
     /// Current velocity [vx, vy] in screen pixels per frame.
     pub vx: f64,
     pub vy: f64,
+    /// Whether the user currently has finger contact and is steering the ball.
+    pub touch_active: bool,
     /// Friction coefficient (0.85–0.99). Applied each frame: v *= friction.
     pub friction: f64,
+    /// Higher damping while finger is down. Keeps steering controllable and prevents overshoot.
+    pub touch_friction: f64,
+    /// Blend factor for steering velocity updates while dragging.
+    pub drive_blend: f64,
     /// Stop threshold: when |v| < stop_threshold, velocity is zeroed.
     pub stop_threshold: f64,
     /// Whether the trackball is currently in inertia (coasting) mode.
@@ -23,7 +29,10 @@ impl Default for TrackballState {
         Self {
             vx: 0.0,
             vy: 0.0,
+            touch_active: false,
             friction: 0.92,
+            touch_friction: 0.82,
+            drive_blend: 0.45,
             stop_threshold: 0.5,
             coasting: false,
         }
@@ -41,9 +50,36 @@ impl TrackballState {
 
     /// Start a fling with the given velocity (screen pixels/frame).
     pub fn fling(&mut self, vx: f64, vy: f64) {
+        self.touch_active = false;
         self.vx = vx;
         self.vy = vy;
         self.coasting = true;
+    }
+
+    /// Start a new finger-down steering interaction.
+    pub fn begin_touch(&mut self) {
+        self.touch_active = true;
+        self.coasting = false;
+    }
+
+    /// Update steering from the latest drag sample.
+    ///
+    /// `dx`/`dy` are already transformed into screen-space deltas.
+    pub fn drive(&mut self, dx: f64, dy: f64) {
+        self.touch_active = true;
+        self.coasting = false;
+        self.vx = self.vx * (1.0 - self.drive_blend) + dx * self.drive_blend;
+        self.vy = self.vy * (1.0 - self.drive_blend) + dy * self.drive_blend;
+    }
+
+    /// Finish steering and either continue coasting or stop.
+    pub fn end_touch(&mut self) {
+        self.touch_active = false;
+        self.coasting = self.speed() >= self.stop_threshold;
+        if !self.coasting {
+            self.vx = 0.0;
+            self.vy = 0.0;
+        }
     }
 
     /// Advance physics by `dt` seconds.
@@ -53,14 +89,18 @@ impl TrackballState {
     ///
     /// Returns the cursor delta to apply, or (0, 0) if stopped.
     pub fn tick(&mut self, dt: f64) -> (f64, f64) {
-        if !self.coasting {
+        if !self.touch_active && !self.coasting {
             return (0.0, 0.0);
         }
 
         let dx = self.vx;
         let dy = self.vy;
 
-        let decay = self.friction.powf(dt * 60.0);
+        let decay = if self.touch_active {
+            self.touch_friction.powf(dt * 60.0)
+        } else {
+            self.friction.powf(dt * 60.0)
+        };
         self.vx *= decay;
         self.vy *= decay;
 
@@ -68,7 +108,9 @@ impl TrackballState {
         if speed < self.stop_threshold {
             self.vx = 0.0;
             self.vy = 0.0;
-            self.coasting = false;
+            if !self.touch_active {
+                self.coasting = false;
+            }
         }
 
         (dx, dy)
@@ -78,12 +120,17 @@ impl TrackballState {
     pub fn stop(&mut self) {
         self.vx = 0.0;
         self.vy = 0.0;
+        self.touch_active = false;
         self.coasting = false;
     }
 
     /// Remaining speed magnitude.
     pub fn speed(&self) -> f64 {
         (self.vx * self.vx + self.vy * self.vy).sqrt()
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.touch_active || self.coasting
     }
 }
 
@@ -148,6 +195,41 @@ mod tests {
         let mut state = TrackballState::default();
         assert_eq!(state.tick(1.0 / 60.0), (0.0, 0.0));
         assert!(!state.coasting);
+    }
+
+    #[test]
+    fn touch_drive_produces_motion_without_direct_cursor_path() {
+        let mut state = TrackballState::default();
+        state.begin_touch();
+        state.drive(10.0, -4.0);
+
+        let (dx, dy) = state.tick(1.0 / 60.0);
+        assert!(dx.abs() > 0.0 || dy.abs() > 0.0);
+        assert!(state.touch_active);
+        assert!(!state.coasting);
+    }
+
+    #[test]
+    fn touch_release_keeps_coasting_when_velocity_is_high() {
+        let mut state = TrackballState::default();
+        state.begin_touch();
+        state.drive(25.0, 0.0);
+        state.end_touch();
+
+        assert!(state.coasting);
+        let (dx, _) = state.tick(1.0 / 60.0);
+        assert!(dx > 0.0);
+    }
+
+    #[test]
+    fn touch_release_stops_when_velocity_is_small() {
+        let mut state = TrackballState::default();
+        state.begin_touch();
+        state.drive(0.2, 0.0);
+        state.end_touch();
+
+        assert!(!state.coasting);
+        assert_eq!(state.tick(1.0 / 60.0), (0.0, 0.0));
     }
 
     #[test]

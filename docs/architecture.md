@@ -1,5 +1,41 @@
 # TrackBall Watch — Architecture
 
+## Repository Shape
+
+This repository is already moving toward a multi-client input platform. The correct scaling model is:
+
+- `apps/host-desktop/`: desktop host and operator UI
+- `apps/watch-ios/`: Apple mobile bundle
+  - iPhone companion target
+  - Apple Watch client target
+- `shared/`: protocol and cross-client specifications
+- `tools/`: developer and diagnostics tools
+- `installers/`: platform packaging assets
+
+The next structural step should be conceptual, not physical: keep the Apple iPhone + Watch targets in one Xcode project, but treat that folder as one "Apple client bundle" product line. Add future wearable clients as sibling apps, not as more targets crammed into the current watch app.
+
+Recommended medium-term layout:
+
+```text
+apps/
+  host-desktop/
+  apple-client/
+    iphone-companion/
+    apple-watch/
+  wearos-client/
+  galaxy-watch-client/
+shared/
+  protocol/
+  input-model/
+  pairing/
+  assistant-contracts/
+tools/
+installers/
+docs/
+```
+
+Do not physically move to that layout until CI, naming, and ownership boundaries are stable. Otherwise the repo will take rename churn without reducing risk.
+
 ## System Overview
 
 ```
@@ -44,7 +80,7 @@ Total latency target: p50 < 15ms, p99 < 30ms
 
 **Why on-device gesture recognition?** To minimize WatchConnectivity traffic. Instead of sending every TOUCH_MOVED at 60Hz, a single GESTURE packet is sent for tap/fling. Only trackpad mode sends raw TOUCH events.
 
-### 2. iPhone Companion (`apps/companion-ios/`)
+### 2. iPhone Companion (`apps/watch-ios/`)
 
 **Language:** Swift, iOS 16+
 
@@ -149,3 +185,34 @@ Config file location:
 - Windows: `%APPDATA%\TrackBallWatch\config.json`
 
 Key settings: `sensitivity`, `mode` (trackpad/trackball), `hand` (left/right), `accel.curve`, `trackball_friction`, `udp_port`.
+
+## Product Boundary Recommendation
+
+Treat the system as 4 layers:
+
+1. `Input transport`
+   Watch, phone relay, desktop session transport.
+2. `Input semantics`
+   Cursor, scroll, gesture, click, dictation intent, command intent.
+3. `Assistant logic`
+   Rewriting, disambiguation, validation, summarization, task/event extraction.
+4. `Execution adapters`
+   OS input injection, calendar/task creation, app-specific actions.
+
+This separation matters because the future roadmap combines low-latency control with assistant behavior. Those are different reliability domains. The transport loop must stay deterministic; the assistant layer can be slower and probabilistic.
+
+## Product Direction Validation
+
+The roadmap is directionally sound if scoped this way:
+
+- Strong fit:
+  - wearable-driven cursor and shortcut input
+  - push-to-talk dictation from wrist
+  - assistant-assisted correction and intent expansion
+  - quick capture of reminders, tasks, and calendar events
+- Weak fit if attempted too early:
+  - full keyboard replacement
+  - always-on ambient assistant on watchOS/iOS
+  - one monolithic app loop handling both real-time input and agent decisions
+
+The correct product strategy is not "replace keyboard first". It is "be the best wearable input front-end, then layer assistant behavior where ambiguity exists".

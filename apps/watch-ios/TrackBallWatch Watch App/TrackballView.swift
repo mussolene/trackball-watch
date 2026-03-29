@@ -107,7 +107,7 @@ struct TrackballView: View {
 
         let r = Double(diameter / 2.0)
         if r > 0 {
-            angularVelocity = SIMD3<Double>(-Double(vy * pScale) / r * 60.0,
+            angularVelocity = SIMD3<Double>( Double(vy * pScale) / r * 60.0,
                                             Double(vx * pScale) / r * 60.0,
                                             0)
         }
@@ -126,7 +126,7 @@ struct TrackballView: View {
         if fb.active {
             let r = Double(ballDiameter / 2.0)
             if r > 0 {
-                let target = SIMD3<Double>(-fb.vy / r * 60.0, fb.vx / r * 60.0, 0)
+                let target = SIMD3<Double>( fb.vy / r * 60.0, fb.vx / r * 60.0, 0)
                 angularVelocity = angularVelocity * 0.7 + target * 0.3
             }
         }
@@ -154,7 +154,7 @@ struct TrackballView: View {
     private func applyDragRotation(dx: CGFloat, dy: CGFloat, diameter: CGFloat, location: CGPoint) {
         let r = Double(diameter / 2.0)
         guard r > 0 else { return }
-        let omegaX = -Double(dy) / r
+        let omegaX =  Double(dy) / r
         let omegaY =  Double(dx) / r
         let omegaZ = zSpin(location: location, dx: dx, dy: dy,
                            center: CGPoint(x: diameter / 2, y: diameter / 2), radius: CGFloat(r))

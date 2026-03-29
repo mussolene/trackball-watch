@@ -118,9 +118,9 @@ jobs:
           name: windows-msi
           path: apps/host-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
 
-  # ── iOS + watchOS (TestFlight) ────────────────────────────────────────────
-  build-ios-watch:
-    name: Build iOS + watchOS → TestFlight
+  # ── Apple mobile bundle (iPhone companion + embedded watch app) ───────────
+  build-apple-mobile:
+    name: Build Apple mobile archive
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
@@ -144,36 +144,21 @@ jobs:
           api-key-id: ${{ secrets.APPSTORE_API_KEY_ID }}
           api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
 
-      - name: Archive iOS companion
-        working-directory: apps/companion-ios
+      - name: Archive Apple mobile bundle
         run: |
           xcodebuild archive \
-            -scheme TrackBallCompanion \
+            -project apps/watch-ios/TrackBallWatch.xcodeproj \
+            -scheme TrackBallWatch \
             -destination generic/platform=iOS \
-            -archivePath /tmp/companion.xcarchive \
+            -archivePath /tmp/trackball-apple-mobile.xcarchive \
             CODE_SIGN_IDENTITY="iPhone Distribution" \
             PRODUCT_BUNDLE_IDENTIFIER=com.trackball-watch.app
-        continue-on-error: true  # xcodeproj not yet created
-
-      - name: Archive watchOS app
-        working-directory: apps/watch-ios
-        run: |
-          xcodebuild archive \
-            -scheme "TrackBallWatch Watch App" \
-            -destination generic/platform=watchOS \
-            -archivePath /tmp/watch.xcarchive \
-            CODE_SIGN_IDENTITY="iPhone Distribution"
-        continue-on-error: true
 
       - name: Upload to TestFlight
         if: ${{ secrets.APPSTORE_API_PRIVATE_KEY != '' }}
         run: |
-          xcrun altool --upload-app \
-            --type ios \
-            --file /tmp/companion.xcarchive/Products/Applications/*.ipa \
-            --apiKey ${{ secrets.APPSTORE_API_KEY_ID }} \
-            --apiIssuer ${{ secrets.APPSTORE_ISSUER_ID }}
-        continue-on-error: true
+          echo "Apple upload pipeline requires explicit exportOptions.plist and ipa export."
+          echo "Archive created at /tmp/trackball-apple-mobile.xcarchive"
 
   # ── GitHub Release ────────────────────────────────────────────────────────
   release:

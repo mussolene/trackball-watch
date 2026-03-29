@@ -37,6 +37,8 @@ node_modules/
 
 # Local Xcode settings (DEVELOPMENT_TEAM, etc.)
 Local.xcconfig
+.codex-derived/
+.codex-tmp/
 
 # OS
 .DS_Store

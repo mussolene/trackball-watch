@@ -1,15 +1,16 @@
 SHELL := /bin/bash
 export PATH := $(HOME)/.cargo/bin:$(PATH)
 
-DESKTOP   := apps/host-desktop
-TAURI_DIR := $(DESKTOP)/src-tauri
-WATCH_DIR := apps/watch-ios
-TOOL_DIR  := tools/latency-tester
+HOST_APP_DIR      := apps/host-desktop
+HOST_CORE_DIR     := $(HOST_APP_DIR)/src-tauri
+APPLE_CLIENT_DIR  := apps/watch-ios
+TOOLS_LATENCY_DIR := tools/latency-tester
 
 # macOS .app produced by `tauri:build` (see tauri.conf productName)
 HOST_APP_BUNDLE := TrackBall Watch.app
-HOST_APP_SRC    := $(TAURI_DIR)/target/release/bundle/macos/$(HOST_APP_BUNDLE)
+HOST_APP_SRC    := $(HOST_CORE_DIR)/target/release/bundle/macos/$(HOST_APP_BUNDLE)
 HOST_APP_DEST   := /Applications/$(HOST_APP_BUNDLE)
+APPLE_DERIVED_DATA := $(CURDIR)/.codex-derived/xcode
 
 XCODE_FLAGS  := CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
 CARGO        := $(HOME)/.cargo/bin/cargo
@@ -19,7 +20,7 @@ WATCH_SIM    := $(shell xcrun simctl list devices available 2>/dev/null | \
                   grep 'Apple Watch' | head -1 | grep -oE '[A-F0-9-]{36}')
 
 .PHONY: all install build build-desktop install-host build-ios build-watch build-tools install-ios \
-        install-mobile install-mobile-clean verify \
+        build-apple build-apple-watch build-apple-mobile install-mobile install-mobile-clean verify \
         dev test test-rust test-swift lint fmt check xcodegen clean help
 
 # ── Main targets ──────────────────────────────────────────────────────────────
@@ -33,14 +34,34 @@ help: ## Show this help
 # ── Install ───────────────────────────────────────────────────────────────────
 
 install: ## Install npm dependencies
-	cd $(DESKTOP) && npm install
+	cd $(HOST_APP_DIR) && npm install
 
 # ── Build ─────────────────────────────────────────────────────────────────────
 
-build: build-desktop build-ios build-watch build-tools ## Build all targets
+build: build-desktop build-apple build-tools ## Build all targets
 
 build-desktop: install ## Build desktop host (Tauri release)
-	cd $(DESKTOP) && CI=false npm run build && CI=false npm run tauri:build
+	cd $(HOST_APP_DIR) && CI=false npm run build && CI=false npm run tauri:build
+
+build-apple: build-apple-mobile build-apple-watch ## Build Apple client targets
+
+build-apple-mobile: ## Build iPhone companion + embedded Watch app (debug)
+	xcodebuild build \
+		-project $(APPLE_CLIENT_DIR)/TrackBallWatch.xcodeproj \
+		-scheme TrackBallWatch \
+		-destination 'generic/platform=iOS' \
+		-configuration Debug \
+		-derivedDataPath '$(APPLE_DERIVED_DATA)' \
+		$(XCODE_FLAGS)
+
+build-apple-watch: ## Build watchOS app standalone (debug)
+	xcodebuild build \
+		-project $(APPLE_CLIENT_DIR)/TrackBallWatch.xcodeproj \
+		-scheme TrackBallWatch-watchOS \
+		-destination 'generic/platform=watchOS' \
+		-configuration Debug \
+		-derivedDataPath '$(APPLE_DERIVED_DATA)' \
+		$(XCODE_FLAGS)
 
 install-host: build-desktop ## Build desktop and install .app into /Applications (macOS only)
 	@if [[ "$$(uname -s)" != Darwin ]]; then \
@@ -50,51 +71,39 @@ install-host: build-desktop ## Build desktop and install .app into /Applications
 	ditto "$(HOST_APP_SRC)" "$(HOST_APP_DEST)"
 	@echo "Installed $(HOST_APP_DEST)"
 
-build-ios: ## Build iOS companion + embedded Watch app (debug)
-	xcodebuild build \
-		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
-		-scheme TrackBallWatch \
-		-destination 'generic/platform=iOS' \
-		-configuration Debug \
-		$(XCODE_FLAGS)
+build-ios: build-apple-mobile ## Backward-compatible alias
 
-build-watch: ## Build watchOS app standalone (debug)
-	xcodebuild build \
-		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
-		-scheme TrackBallWatch-watchOS \
-		-destination 'generic/platform=watchOS' \
-		-configuration Debug \
-		$(XCODE_FLAGS)
+build-watch: build-apple-watch ## Backward-compatible alias
 
 build-tools: ## Build latency-tester
-	cd $(TOOL_DIR) && cargo build --release
+	cd $(TOOLS_LATENCY_DIR) && cargo build --release
 
-install-desktop: build-desktop ## Build, copy to /Applications, deep-sign (fixes Accessibility TCC)
+install-desktop: build-desktop ## Build, copy to /Applications, deep-sign, reset TCC (fixes Accessibility)
 	@APP="TrackBall Watch.app"; \
-	SRC=$$(find $(DESKTOP)/src-tauri/target/release/bundle/macos -maxdepth 1 -name "$$APP" 2>/dev/null | head -1); \
+	BUNDLE_ID="com.trackballwatch.host"; \
+	SRC=$$(find $(HOST_APP_DIR)/src-tauri/target/release/bundle/macos -maxdepth 1 -name "$$APP" 2>/dev/null | head -1); \
 	if [ -z "$$SRC" ]; then echo "error: app not found after build"; exit 1; fi; \
+	echo "==> Stopping any running instance..."; \
+	pkill -x TrackBallWatch 2>/dev/null || true; \
+	sleep 0.5; \
 	echo "==> Copying to /Applications..."; \
 	rm -rf "/Applications/$$APP"; \
 	cp -R "$$SRC" "/Applications/$$APP"; \
-	echo "==> Deep-signing (ad-hoc) so macOS TCC identifies the bundle consistently..."; \
-	codesign --force --deep --sign - --entitlements $(DESKTOP)/src-tauri/entitlements.plist "/Applications/$$APP"; \
-	echo "==> Installed. If Accessibility prompt does not appear, run:"; \
-	echo "    tccutil reset Accessibility com.trackballwatch.host"
+	echo "==> Deep-signing (ad-hoc) for consistent TCC identity..."; \
+	codesign --force --deep --sign - \
+		--identifier "$$BUNDLE_ID" \
+		--entitlements $(HOST_APP_DIR)/src-tauri/entitlements.plist \
+		"/Applications/$$APP"; \
+	echo "==> Resetting Accessibility TCC entry (stale after binary change)..."; \
+	tccutil reset Accessibility "$$BUNDLE_ID" 2>/dev/null \
+		&& echo "    TCC reset OK" \
+		|| echo "    tccutil reset skipped (try: sudo tccutil reset Accessibility $$BUNDLE_ID)"; \
+	echo "==> Launching app (system Accessibility prompt should appear)..."; \
+	open -a "/Applications/$$APP"; \
+	echo "==> Done. Grant Accessibility in the system dialog or via:"; \
+	echo "    System Settings → Privacy & Security → Accessibility → TrackBall Watch"
 
-install-ios: ## Build & install iOS+Watch app on connected device (requires signed identity)
-	xcodebuild build \
-		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
-		-scheme TrackBallWatch \
-		-destination 'generic/platform=iOS' \
-		-configuration Debug \
-		-allowProvisioningUpdates \
-		-allowProvisioningDeviceRegistration
-	@IPHONE_ID=$$(xcrun devicectl list devices 2>/dev/null \
-		| awk 'NR>2 && /connected/ && /iPhone/{print $$3}' | head -1); \
-	APP=$$(find ~/Library/Developer/Xcode/DerivedData/TrackBallWatch-*/Build/Products/Debug-iphoneos \
-		-maxdepth 1 -name "TrackBallCompanion-iOS.app" 2>/dev/null | head -1); \
-	echo "Installing $$APP on $$IPHONE_ID"; \
-	xcrun devicectl device install app --device "$$IPHONE_ID" "$$APP"
+install-ios: install-mobile ## Alias for install-mobile (builds + installs iOS; Watch gets pushed via companion)
 
 # iPhone + paired Apple Watch: one build, install .app on phone then watch bundle on watch.
 #   make install-mobile              — incremental build + install both devices
@@ -109,65 +118,56 @@ install-mobile-clean: ## Xcode clean, then build & install iPhone + Watch
 # ── Dev ───────────────────────────────────────────────────────────────────────
 
 dev: install ## Run desktop host in dev mode (hot-reload)
-	cd $(DESKTOP) && npm run tauri dev
+	cd $(HOST_APP_DIR) && npm run tauri dev
 
 # ── Test ──────────────────────────────────────────────────────────────────────
 
 test: test-rust test-swift ## Run all tests
 
 test-rust: ## Run Rust tests (desktop host)
-	cd $(TAURI_DIR) && $(CARGO) test 2>&1 | grep -E "^test result|^error"
+	cd $(HOST_CORE_DIR) && $(CARGO) test 2>&1 | grep -E "^test result|^error"
 
 test-swift: ## Build & test watchOS unit tests (uses first available Watch simulator)
 	@echo "==> Watch simulator: $(WATCH_SIM)"
 	xcodebuild test \
-		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
+		-project $(APPLE_CLIENT_DIR)/TrackBallWatch.xcodeproj \
 		-scheme TrackBallWatch-watchOS \
 		-destination 'platform=watchOS Simulator,id=$(WATCH_SIM)' \
+		-derivedDataPath '$(APPLE_DERIVED_DATA)' \
 		$(XCODE_FLAGS) 2>&1 | grep -E "error:|Test Suite|PASSED|FAILED|BUILD" | tail -20 || true
 
 verify: ## Fast CI-style check: cargo check + Rust tests + iOS build
 	@echo "==> cargo check"
-	cd $(TAURI_DIR) && $(CARGO) check --all-features 2>&1 | tail -3
+	cd $(HOST_CORE_DIR) && $(CARGO) check --all-features 2>&1 | tail -3
 	@echo "==> cargo test"
-	cd $(TAURI_DIR) && $(CARGO) test 2>&1 | grep -E "^test result|^error"
-	@echo "==> xcodebuild (watchOS)"
-	xcodebuild build \
-		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
-		-scheme TrackBallWatch-watchOS \
-		-destination 'generic/platform=watchOS' \
-		-configuration Debug \
-		$(XCODE_FLAGS) 2>&1 | grep -E "error:|BUILD "
-	@echo "==> xcodebuild (iOS)"
-	xcodebuild build \
-		-project $(WATCH_DIR)/TrackBallWatch.xcodeproj \
-		-scheme TrackBallWatch \
-		-destination 'generic/platform=iOS' \
-		-configuration Debug \
-		$(XCODE_FLAGS) 2>&1 | grep -E "error:|BUILD "
+	cd $(HOST_CORE_DIR) && $(CARGO) test 2>&1 | grep -E "^test result|^error"
+	@echo "==> xcodebuild (Apple mobile)"
+	$(MAKE) build-apple-mobile
+	@echo "==> xcodebuild (Apple watch)"
+	$(MAKE) build-apple-watch
 
 # ── Lint & Format ─────────────────────────────────────────────────────────────
 
 lint: ## Run clippy + fmt check
-	cd $(TAURI_DIR) && $(CARGO) fmt -- --check
-	cd $(TAURI_DIR) && $(CARGO) clippy --all-features -- -D warnings
+	cd $(HOST_CORE_DIR) && $(CARGO) fmt -- --check
+	cd $(HOST_CORE_DIR) && $(CARGO) clippy --all-features -- -D warnings
 
 fmt: ## Auto-format Rust code
-	cd $(TAURI_DIR) && $(CARGO) fmt
+	cd $(HOST_CORE_DIR) && $(CARGO) fmt
 
 check: ## Quick compilation check (no link)
-	cd $(TAURI_DIR) && $(CARGO) check --all-features 2>&1 | tail -3
-	cd $(TOOL_DIR) && $(CARGO) check 2>&1 | tail -2
+	cd $(HOST_CORE_DIR) && $(CARGO) check --all-features 2>&1 | tail -3
+	cd $(TOOLS_LATENCY_DIR) && $(CARGO) check 2>&1 | tail -2
 
 # ── XcodeGen ──────────────────────────────────────────────────────────────────
 
 xcodegen: ## Regenerate Xcode project from project.yml
-	cd $(WATCH_DIR) && xcodegen generate
+	cd $(APPLE_CLIENT_DIR) && xcodegen generate
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 
 clean: ## Remove build artifacts
-	cd $(TAURI_DIR) && cargo clean
-	cd $(TOOL_DIR) && cargo clean
-	rm -rf $(DESKTOP)/dist $(DESKTOP)/node_modules
-	xcodebuild clean -project $(WATCH_DIR)/TrackBallWatch.xcodeproj -alltargets 2>/dev/null || true
+	cd $(HOST_CORE_DIR) && cargo clean
+	cd $(TOOLS_LATENCY_DIR) && cargo clean
+	rm -rf $(HOST_APP_DIR)/dist $(HOST_APP_DIR)/node_modules
+	xcodebuild clean -project $(APPLE_CLIENT_DIR)/TrackBallWatch.xcodeproj -alltargets 2>/dev/null || true
