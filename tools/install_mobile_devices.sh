@@ -93,7 +93,7 @@ if [[ "${CLEAN:-0}" == "1" ]]; then
     run_xcodebuild_clean \
         xcodebuild clean \
         -project "$PROJECT" \
-        -alltargets \
+        -scheme TrackBallWatch \
         -derivedDataPath "$DERIVED_DATA_PATH"
 fi
 
