@@ -421,7 +421,7 @@ private struct TrackballGlobeView: View {
                 lineWidth: 1
             )
 
-            for latitude in stride(from: -60.0, through: 60.0, by: 30.0) {
+            for latitude in stride(from: -75.0, through: 75.0, by: 15.0) {
                 strokeProjectedCircle(
                     context: &context,
                     center: center,
@@ -432,7 +432,7 @@ private struct TrackballGlobeView: View {
                 )
             }
 
-            for longitude in stride(from: 0.0, through: 150.0, by: 30.0) {
+            for longitude in stride(from: 0.0, through: 165.0, by: 15.0) {
                 strokeProjectedCircle(
                     context: &context,
                     center: center,
