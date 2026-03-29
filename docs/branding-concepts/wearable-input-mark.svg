@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" fill="none">
+  <rect width="1200" height="720" fill="#0B0F16"/>
+  <text x="72" y="96" fill="#F5F7FB" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="44" font-weight="700">Concept C — Wearable Input Mark</text>
+  <text x="72" y="136" fill="#91A0B8" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="24">Closer to the Apple Watch origin story, but more product-line specific and less future-proof.</text>
+
+  <g transform="translate(90 170)">
+    <rect x="88" y="4" width="144" height="44" rx="22" fill="#1A2230"/>
+    <rect x="88" y="278" width="144" height="44" rx="22" fill="#1A2230"/>
+    <rect x="40" y="42" width="240" height="240" rx="64" fill="#111723" stroke="#2B3648" stroke-width="10"/>
+    <rect x="72" y="74" width="176" height="176" rx="46" fill="#0C1119"/>
+    <circle cx="160" cy="160" r="54" fill="url(#wearGlow)"/>
+    <circle cx="160" cy="160" r="40" fill="#1E293B"/>
+    <path d="M214 88C247 112 264 145 264 184" stroke="#61E5F8" stroke-width="10" stroke-linecap="round"/>
+    <path d="M255 170L270 189L243 193" fill="#61E5F8"/>
+    <rect x="282" y="122" width="14" height="56" rx="7" fill="#414D62"/>
+  </g>
+
+  <g transform="translate(470 190)">
+    <rect x="0" y="0" width="240" height="240" rx="52" fill="#111723"/>
+    <rect x="64" y="48" width="112" height="148" rx="34" fill="#182232" stroke="#334055" stroke-width="8"/>
+    <circle cx="120" cy="122" r="30" fill="#61E5F8" opacity=".28"/>
+    <circle cx="120" cy="122" r="22" fill="#202B3B"/>
+    <path d="M152 72C177 89 190 114 190 143" stroke="#61E5F8" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(760 190)">
+    <rect x="0" y="0" width="240" height="240" rx="52" fill="#0C1119"/>
+    <rect x="81" y="60" width="78" height="112" rx="24" fill="#F5F7FB"/>
+    <circle cx="120" cy="116" r="14" fill="#0C1119"/>
+    <path d="M140 74C162 88 173 107 173 132" stroke="#61E5F8" stroke-width="8" stroke-linecap="round"/>
+  </g>
+
+  <g transform="translate(72 570)">
+    <text x="0" y="0" fill="#F5F7FB" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="28" font-weight="700">Why it works</text>
+    <text x="0" y="42" fill="#A6B2C7" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="22">It immediately says “watch-based input”.</text>
+    <text x="0" y="76" fill="#A6B2C7" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="22">Weakness: it ties the brand too strongly to Apple Watch, while the product is already broader than one client.</text>
+  </g>
+
+  <defs>
+    <radialGradient id="wearGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(160 148) rotate(90) scale(66)">
+      <stop stop-color="#61E5F8" stop-opacity=".34"/>
+      <stop offset=".62" stop-color="#7B61FF" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#0B0F16" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>

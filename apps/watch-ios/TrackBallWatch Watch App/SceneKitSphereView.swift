@@ -26,8 +26,10 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
         // Try to load a custom asset texture first; fall back to generated one
         let texture = UIImage(named: "TrackballTexture") ?? Self.generateBallTexture()
         material.diffuse.contents = texture
-        material.specular.contents = UIColor.white
-        material.shininess = 80.0
+        material.emission.contents = UIImage(named: "TrackballEmission") ?? Self.generateEmissionTexture()
+        material.specular.contents = UIColor(white: 0.95, alpha: 1.0)
+        material.shininess = 96.0
+        material.fresnelExponent = 1.8
         material.lightingModel = .phong
         sphere.materials = [material]
 
@@ -45,21 +47,22 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
         cameraNode.position = SCNVector3(0, 0, 3)
         scene.rootNode.addChildNode(cameraNode)
 
-        // ── Key light (upper-left, warm white) ────────────────────────────────
+        // ── Key light (upper-left, neutral cool) ──────────────────────────────
         let keyLight = SCNLight()
         keyLight.type = .directional
-        keyLight.intensity = 1000
+        keyLight.intensity = 1100
+        keyLight.color = UIColor(red: 0.93, green: 0.97, blue: 1.0, alpha: 1.0)
         keyLight.castsShadow = false
         let keyNode = SCNNode()
         keyNode.light = keyLight
         keyNode.eulerAngles = SCNVector3(-Float.pi / 4, -Float.pi / 6, 0)
         scene.rootNode.addChildNode(keyNode)
 
-        // ── Fill light (right side, cool blue tint) ───────────────────────────
+        // ── Fill light (right side, cyan accent) ──────────────────────────────
         let fillLight = SCNLight()
         fillLight.type = .directional
-        fillLight.intensity = 350
-        fillLight.color = UIColor(red: 0.8, green: 0.9, blue: 1.0, alpha: 1.0)
+        fillLight.intensity = 420
+        fillLight.color = UIColor(red: 0.38, green: 0.90, blue: 0.97, alpha: 1.0)
         fillLight.castsShadow = false
         let fillNode = SCNNode()
         fillNode.light = fillLight
@@ -69,7 +72,8 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
         // ── Ambient light ─────────────────────────────────────────────────────
         let ambLight = SCNLight()
         ambLight.type = .ambient
-        ambLight.intensity = 100
+        ambLight.intensity = 180
+        ambLight.color = UIColor(red: 0.16, green: 0.19, blue: 0.28, alpha: 1.0)
         let ambNode = SCNNode()
         ambNode.light = ambLight
         scene.rootNode.addChildNode(ambNode)
@@ -102,9 +106,7 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
 
     // MARK: - Procedural Texture
 
-    /// Generate a billiard-ball style texture using Core Graphics directly
-    /// (UIGraphicsImageRenderer is not available in watchOS).
-    /// Red background + white equatorial band + white meridian → all 3 rotation axes visible.
+    /// Generate an Orbital Ball texture using Core Graphics directly.
     static func generateBallTexture(size: Int = 256) -> UIImage? {
         let sz = size
         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -115,33 +117,85 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
         ) else { return nil }
 
         let w = CGFloat(sz)
-        let red   = CGColor(red: 0.82, green: 0.10, blue: 0.06, alpha: 1)
-        let white = CGColor(red: 1,    green: 1,    blue: 1,    alpha: 1)
+        let graphite = CGColor(red: 0.09, green: 0.12, blue: 0.18, alpha: 1.0)
+        let deep = CGColor(red: 0.05, green: 0.07, blue: 0.11, alpha: 1.0)
+        let cyan = CGColor(red: 0.38, green: 0.90, blue: 0.97, alpha: 1.0)
+        let violet = CGColor(red: 0.49, green: 0.38, blue: 1.0, alpha: 1.0)
+        let white = CGColor(red: 0.96, green: 0.98, blue: 1.0, alpha: 1.0)
 
-        // Red background
-        ctx.setFillColor(red)
+        // Dark base
+        ctx.setFillColor(deep)
         ctx.fill(CGRect(x: 0, y: 0, width: w, height: w))
 
-        // White equatorial band
-        ctx.setFillColor(white)
-        let bandH = w * 0.14
-        ctx.fill(CGRect(x: 0, y: w / 2 - bandH / 2, width: w, height: bandH))
+        // Soft body shading
+        if let body = CGGradient(
+            colorsSpace: colorSpace,
+            colors: [white.copy(alpha: 0.18)!, graphite, deep] as CFArray,
+            locations: [0.0, 0.28, 1.0]
+        ) {
+            ctx.drawRadialGradient(
+                body,
+                startCenter: CGPoint(x: w * 0.34, y: w * 0.28),
+                startRadius: 0,
+                endCenter: CGPoint(x: w * 0.50, y: w * 0.52),
+                endRadius: w * 0.60,
+                options: [.drawsAfterEndLocation]
+            )
+        }
 
-        // White meridian line
-        let meridW = w * 0.08
-        ctx.fill(CGRect(x: w / 2 - meridW / 2, y: 0, width: meridW, height: w))
+        // Orbital arc
+        ctx.setStrokeColor(cyan)
+        ctx.setLineWidth(w * 0.085)
+        ctx.setLineCap(.round)
+        ctx.addArc(center: CGPoint(x: w * 0.50, y: w * 0.52),
+                   radius: w * 0.32,
+                   startAngle: -.pi * 0.42,
+                   endAngle: .pi * 0.18,
+                   clockwise: false)
+        ctx.strokePath()
 
-        // Red center dot at intersection
-        ctx.setFillColor(red)
-        let dotR = w * 0.07
-        ctx.fillEllipse(in: CGRect(x: w / 2 - dotR, y: w / 2 - dotR,
+        // Secondary accent node
+        ctx.setFillColor(violet)
+        let dotR = w * 0.055
+        ctx.fillEllipse(in: CGRect(x: w * 0.25 - dotR, y: w * 0.70 - dotR,
                                    width: dotR * 2, height: dotR * 2))
 
-        // White pole dots for depth reference
+        // Specular lobe
         ctx.setFillColor(white)
-        let pR = w * 0.04
-        ctx.fillEllipse(in: CGRect(x: w / 2 - pR, y: w * 0.06 - pR, width: pR * 2, height: pR * 2))
-        ctx.fillEllipse(in: CGRect(x: w / 2 - pR, y: w * 0.94 - pR, width: pR * 2, height: pR * 2))
+        ctx.fillEllipse(in: CGRect(x: w * 0.25, y: w * 0.20, width: w * 0.20, height: w * 0.14))
+
+        guard let cgImage = ctx.makeImage() else { return nil }
+        return UIImage(cgImage: cgImage)
+    }
+
+    /// Emissive overlay for the orbital arc and glow node.
+    static func generateEmissionTexture(size: Int = 256) -> UIImage? {
+        let sz = size
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil, width: sz, height: sz, bitsPerComponent: 8,
+            bytesPerRow: sz * 4, space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        let w = CGFloat(sz)
+        let cyan = CGColor(red: 0.38, green: 0.90, blue: 0.97, alpha: 0.92)
+        let violet = CGColor(red: 0.49, green: 0.38, blue: 1.0, alpha: 0.82)
+
+        ctx.setStrokeColor(cyan)
+        ctx.setLineWidth(w * 0.060)
+        ctx.setLineCap(.round)
+        ctx.addArc(center: CGPoint(x: w * 0.50, y: w * 0.52),
+                   radius: w * 0.32,
+                   startAngle: -.pi * 0.42,
+                   endAngle: .pi * 0.18,
+                   clockwise: false)
+        ctx.strokePath()
+
+        ctx.setFillColor(violet)
+        let dotR = w * 0.045
+        ctx.fillEllipse(in: CGRect(x: w * 0.25 - dotR, y: w * 0.70 - dotR,
+                                   width: dotR * 2, height: dotR * 2))
 
         guard let cgImage = ctx.makeImage() else { return nil }
         return UIImage(cgImage: cgImage)

@@ -47,21 +47,59 @@ struct TrackballView: View {
 
     @ViewBuilder
     private func ballView(d: CGFloat) -> some View {
-        SceneKitSphereView(diameter: d, orientation: orientation, isDragging: isDragging)
-            .frame(width: d, height: d)
-            .shadow(
-                color: .black.opacity(isDragging ? 0.72 : 0.58),
-                radius: isDragging ? 12 : 10,
-                x: 2, y: isDragging ? 12 : 10
-            )
-            .padding(8)
-            .contentShape(Circle())
-            .accessibilityLabel("Trackball")
-            .gesture(
-                DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                    .onChanged { v in onDragChanged(v, diameter: d) }
-                    .onEnded   { v in onDragEnded(v, diameter: d) }
-            )
+        ZStack {
+            orbitalHalo(d: d)
+            SceneKitSphereView(diameter: d, orientation: orientation, isDragging: isDragging)
+                .frame(width: d, height: d)
+                .shadow(
+                    color: .black.opacity(isDragging ? 0.76 : 0.62),
+                    radius: isDragging ? 13 : 10,
+                    x: 2,
+                    y: isDragging ? 12 : 10
+                )
+        }
+        .frame(width: d * 1.34, height: d * 1.34)
+        .padding(8)
+        .contentShape(Circle())
+        .accessibilityLabel("Trackball")
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                .onChanged { v in onDragChanged(v, diameter: d) }
+                .onEnded   { v in onDragEnded(v, diameter: d) }
+        )
+    }
+
+    @ViewBuilder
+    private func orbitalHalo(d: CGFloat) -> some View {
+        ZStack {
+            Circle()
+                .stroke(
+                    AngularGradient(
+                        colors: [
+                            .clear,
+                            Color(red: 0.38, green: 0.90, blue: 0.97).opacity(isDragging ? 0.95 : 0.72),
+                            .clear,
+                            Color(red: 0.49, green: 0.38, blue: 1.0).opacity(isDragging ? 0.46 : 0.30),
+                            .clear
+                        ],
+                        center: .center
+                    ),
+                    style: StrokeStyle(lineWidth: max(4, d * 0.065), lineCap: .round)
+                )
+                .frame(width: d * 1.16, height: d * 1.16)
+                .rotationEffect(.degrees(isDragging ? 18 : -8))
+                .blur(radius: isDragging ? 0.4 : 0.9)
+
+            Circle()
+                .stroke(Color(red: 0.38, green: 0.90, blue: 0.97).opacity(isDragging ? 0.18 : 0.12), lineWidth: max(1, d * 0.018))
+                .frame(width: d * 1.26, height: d * 1.26)
+
+            Circle()
+                .fill(Color(red: 0.49, green: 0.38, blue: 1.0).opacity(isDragging ? 0.95 : 0.82))
+                .frame(width: d * 0.08, height: d * 0.08)
+                .offset(x: -d * 0.42, y: d * 0.34)
+                .shadow(color: Color(red: 0.49, green: 0.38, blue: 1.0).opacity(0.55), radius: d * 0.08)
+        }
     }
 
     // MARK: - Drag handlers

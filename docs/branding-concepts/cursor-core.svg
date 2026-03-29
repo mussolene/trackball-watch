@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" fill="none">
+  <rect width="1200" height="720" fill="#0A0E14"/>
+  <text x="72" y="96" fill="#F5F7FB" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="44" font-weight="700">Concept B — Cursor Core</text>
+  <text x="72" y="136" fill="#91A0B8" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="24">More software-like and modern, but less specific to trackball mechanics.</text>
+
+  <g transform="translate(90 190)">
+    <rect x="0" y="0" width="320" height="320" rx="74" fill="#121826"/>
+    <circle cx="160" cy="160" r="94" fill="url(#ringGlow)" opacity=".9"/>
+    <circle cx="160" cy="160" r="66" fill="#132033"/>
+    <path d="M116 96L222 146L171 171L201 235L170 247L140 185L103 223L116 96Z" fill="#F6FAFF"/>
+    <circle cx="230" cy="94" r="14" fill="#61E5F8"/>
+  </g>
+
+  <g transform="translate(470 190)">
+    <rect x="0" y="0" width="240" height="240" rx="52" fill="#111723"/>
+    <circle cx="120" cy="120" r="82" fill="url(#ringGlowSmall)" opacity=".9"/>
+    <path d="M84 70L163 108L126 127L149 177L126 186L104 141L77 168L84 70Z" fill="#F6FAFF"/>
+  </g>
+
+  <g transform="translate(760 190)">
+    <rect x="0" y="0" width="240" height="240" rx="52" fill="#0C1119"/>
+    <circle cx="120" cy="120" r="20" fill="#61E5F8"/>
+    <path d="M75 76L159 117L121 134L147 190L121 200L95 144L68 170L75 76Z" fill="#F5F7FB"/>
+  </g>
+
+  <g transform="translate(72 570)">
+    <text x="0" y="0" fill="#F5F7FB" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="28" font-weight="700">Why it works</text>
+    <text x="0" y="42" fill="#A6B2C7" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="22">Feels crisp, software-native, and readable at small sizes.</text>
+    <text x="0" y="76" fill="#A6B2C7" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="22">Weakness: it can look like a generic pointer tool and loses the unique trackball angle.</text>
+  </g>
+
+  <defs>
+    <radialGradient id="ringGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(160 160) rotate(90) scale(94)">
+      <stop stop-color="#61E5F8" stop-opacity=".44"/>
+      <stop offset=".62" stop-color="#7B61FF" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#0A0E14" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ringGlowSmall" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(120 120) rotate(90) scale(82)">
+      <stop stop-color="#61E5F8" stop-opacity=".42"/>
+      <stop offset=".62" stop-color="#7B61FF" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#0A0E14" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+</svg>

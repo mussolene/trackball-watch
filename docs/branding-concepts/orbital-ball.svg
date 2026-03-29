@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" fill="none">
+  <rect width="1200" height="720" fill="#0B0F16"/>
+  <text x="72" y="96" fill="#F5F7FB" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="44" font-weight="700">Concept A — Orbital Ball</text>
+  <text x="72" y="136" fill="#91A0B8" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="24">Virtual trackball as the core symbol. Best match for the product thesis.</text>
+
+  <g transform="translate(90 190)">
+    <rect x="0" y="0" width="320" height="320" rx="74" fill="#121826"/>
+    <circle cx="160" cy="160" r="96" fill="url(#ballGlow)"/>
+    <circle cx="160" cy="160" r="72" fill="url(#ballBody)"/>
+    <path d="M126 132C144 110 176 102 202 114C224 124 236 145 236 170C236 200 218 226 190 238C163 250 126 243 104 219C84 196 82 158 104 135C110 128 118 123 126 132Z" fill="url(#specular)" opacity=".9"/>
+    <path d="M208 88C252 108 280 150 280 202" stroke="#61E5F8" stroke-width="12" stroke-linecap="round" opacity=".95"/>
+    <path d="M270 177L286 200L256 204" fill="#61E5F8"/>
+    <circle cx="96" cy="236" r="10" fill="#7D62FF"/>
+  </g>
+
+  <g transform="translate(470 190)">
+    <rect x="0" y="0" width="240" height="240" rx="52" fill="#111723"/>
+    <circle cx="120" cy="120" r="74" fill="url(#ballGlow)"/>
+    <circle cx="120" cy="120" r="56" fill="url(#ballBody)"/>
+    <path d="M150 58C182 72 202 102 202 138" stroke="#61E5F8" stroke-width="10" stroke-linecap="round"/>
+    <path d="M194 122L209 142L182 146" fill="#61E5F8"/>
+  </g>
+
+  <g transform="translate(760 190)">
+    <rect x="0" y="0" width="240" height="240" rx="52" fill="#0C1119"/>
+    <circle cx="120" cy="120" r="58" fill="#F5F7FB"/>
+    <path d="M120 52C165 52 202 88 202 133" stroke="#61E5F8" stroke-width="12" stroke-linecap="round"/>
+    <path d="M194 118L208 136L183 141" fill="#61E5F8"/>
+  </g>
+
+  <g transform="translate(72 570)">
+    <text x="0" y="0" fill="#F5F7FB" font-family="SF Pro Display, Inter, Arial, sans-serif" font-size="28" font-weight="700">Why it works</text>
+    <text x="0" y="42" fill="#A6B2C7" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="22">Directly maps to the product idea: a virtual ball that drives precision cursor input.</text>
+    <text x="0" y="76" fill="#A6B2C7" font-family="SF Pro Text, Inter, Arial, sans-serif" font-size="22">Scales cleanly from tray glyph to app icon and does not lock the brand to Apple Watch only.</text>
+  </g>
+
+  <defs>
+    <radialGradient id="ballGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(160 144) rotate(90) scale(118)">
+      <stop stop-color="#59E9FF" stop-opacity=".34"/>
+      <stop offset=".6" stop-color="#6A52FF" stop-opacity=".18"/>
+      <stop offset="1" stop-color="#0F1624" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ballBody" x1="108" y1="92" x2="214" y2="230" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2A3447"/>
+      <stop offset=".48" stop-color="#171F2C"/>
+      <stop offset="1" stop-color="#0E141F"/>
+    </linearGradient>
+    <linearGradient id="specular" x1="109" y1="121" x2="211" y2="220" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E6F8FF" stop-opacity=".92"/>
+      <stop offset=".65" stop-color="#7AD7FF" stop-opacity=".12"/>
+      <stop offset="1" stop-color="#7AD7FF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+</svg>
