@@ -8,6 +8,7 @@ use sha2::{Digest, Sha256};
 use std::net::Ipv4Addr;
 use std::sync::{Arc, Mutex};
 use tauri::{
+    image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     Emitter, Manager,
@@ -459,7 +460,9 @@ pub fn run() {
             };
 
             let mut tray_builder = TrayIconBuilder::with_id("main-tray");
-            if let Some(icon) = app.default_window_icon().cloned() {
+            if let Ok(icon) = Image::from_bytes(include_bytes!("../icons/tray-icon.png")) {
+                tray_builder = tray_builder.icon(icon);
+            } else if let Some(icon) = app.default_window_icon().cloned() {
                 tray_builder = tray_builder.icon(icon);
             }
             tray_builder
