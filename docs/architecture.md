@@ -1,5 +1,7 @@
 # TrackBall Watch — Architecture
 
+Product definition and scope live in [docs/product.md](./product.md).
+
 ## Repository Shape
 
 This repository is already moving toward a multi-client input platform. The correct scaling model is:
@@ -215,4 +217,4 @@ The roadmap is directionally sound if scoped this way:
   - always-on ambient assistant on watchOS/iOS
   - one monolithic app loop handling both real-time input and agent decisions
 
-The correct product strategy is not "replace keyboard first". It is "be the best wearable input front-end, then layer assistant behavior where ambiguity exists".
+The correct product strategy is not "replace keyboard first". It is "build a strong wearable input layer first, then extend it into a broader multi-device input platform with keyboard, clipboard, and assistant workflows".

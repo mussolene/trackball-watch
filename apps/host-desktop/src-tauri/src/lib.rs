@@ -16,9 +16,24 @@ use tauri::{
 use engine::kalman::{Kalman2D, KalmanConfig};
 use engine::one_euro::OneEuroFilter;
 use engine::trackball::TrackballState;
+use engine::virtual_ball::VirtualBallConfig;
 use protocol::packets::{GestureType, TouchPhase};
 use server::udp::{InputEvent, UdpServer};
 use settings::config::{AppConfig, Hand, InputMode};
+
+const TRACKPAD_BALL_CONFIG: VirtualBallConfig = VirtualBallConfig {
+    packet_scale: 400.0,
+    roll_gain: 0.85,
+    jitter_deadzone: 0.01,
+    max_step: 28.0,
+};
+
+const TRACKBALL_BALL_CONFIG: VirtualBallConfig = VirtualBallConfig {
+    packet_scale: 32.0,
+    roll_gain: 0.42,
+    jitter_deadzone: 0.02,
+    max_step: 24.0,
+};
 
 /// Shared application state (input pipeline + connection info).
 struct AppState {
@@ -736,12 +751,11 @@ fn process_trackpad_touch(
         return None;
     }
 
-    let x = payload.x as f64;
-    let y = payload.y as f64;
+    let x = TRACKPAD_BALL_CONFIG.decode_axis(payload.x);
+    let y = TRACKPAD_BALL_CONFIG.decode_axis(payload.y);
 
     if phase == TouchPhase::Began {
         s.trackball.stop();
-        let _ = s.kalman.update(x, y);
         s.last_raw_x = x;
         s.last_raw_y = y;
         s.last_touch_x = x;
@@ -752,70 +766,32 @@ fn process_trackpad_touch(
         return None;
     }
 
-    let mut dx = x - s.last_raw_x;
-    let mut dy = y - s.last_raw_y;
+    let dx = x - s.last_raw_x;
+    let dy = y - s.last_raw_y;
     s.last_raw_x = x;
     s.last_raw_y = y;
     s.last_touch_x = x;
     s.last_touch_y = y;
 
-    let user_scale = s.config.sensitivity.max(0.05);
-    dx *= user_scale;
-    dy *= user_scale;
-
-    let p = payload.pressure;
-    if p > 0 {
-        let gain = 0.4 + 0.6 * (p as f64 / 255.0);
-        dx *= gain;
-        dy *= gain;
-    }
-
-    const MAX_DELTA: f64 = 8000.0;
-    let speed = (dx * dx + dy * dy).sqrt();
-    let jitter_deadzone = if speed < 120.0 {
-        8.0
-    } else if speed < 420.0 {
-        4.0
-    } else {
-        1.0
-    };
-    if speed < jitter_deadzone {
-        return None;
-    }
-    dx = dx.clamp(-MAX_DELTA, MAX_DELTA);
-    dy = dy.clamp(-MAX_DELTA, MAX_DELTA);
-
-    let now = std::time::Instant::now();
-    let dt = s.last_touch_time
-        .map(|t| now.duration_since(t).as_secs_f64().clamp(0.004, 0.1))
-        .unwrap_or(1.0 / 60.0);
-    s.last_touch_time = Some(now);
-    dx = s.one_euro_dx.filter_dt(dx, dt);
-    dy = s.one_euro_dy.filter_dt(dy, dt);
-
-    let cfg = s.config.accel;
-    let (sx, sy) = engine::accel::apply_curve_2d(dx, dy, &cfg);
-    if sx * sx + sy * sy < 1e-8 {
-        return None;
-    }
-
-    Some((sx, sy))
+    TRACKPAD_BALL_CONFIG.cursor_delta(dx, dy)
 }
 
-fn process_trackball_touch(s: &mut AppState, payload: protocol::packets::TouchPayload) {
+fn process_trackball_touch(
+    s: &mut AppState,
+    payload: protocol::packets::TouchPayload,
+) -> Option<(f64, f64)> {
     let phase = TouchPhase::try_from(payload.phase).unwrap_or(TouchPhase::Moved);
 
     if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
-        s.trackball.end_touch();
         reset_touch_pipeline(s);
-        return;
+        return None;
     }
 
-    let x = payload.x as f64;
-    let y = payload.y as f64;
+    let x = TRACKBALL_BALL_CONFIG.decode_axis(payload.x);
+    let y = TRACKBALL_BALL_CONFIG.decode_axis(payload.y);
 
     if phase == TouchPhase::Began {
-        s.trackball.begin_touch();
+        s.trackball.stop();
         s.last_raw_x = x;
         s.last_raw_y = y;
         s.last_touch_x = x;
@@ -823,49 +799,27 @@ fn process_trackball_touch(s: &mut AppState, payload: protocol::packets::TouchPa
         s.one_euro_dx.reset();
         s.one_euro_dy.reset();
         s.last_touch_time = None;
-        return;
+        return None;
     }
 
-    let mut dx = x - s.last_raw_x;
-    let mut dy = y - s.last_raw_y;
+    let dx = x - s.last_raw_x;
+    let dy = y - s.last_raw_y;
     s.last_raw_x = x;
     s.last_raw_y = y;
     s.last_touch_x = x;
     s.last_touch_y = y;
 
-    let speed = (dx * dx + dy * dy).sqrt();
-    let jitter_deadzone = if speed < 60.0 { 1.0 } else { 0.0 };
-    if speed < jitter_deadzone {
-        return;
-    }
+    // In trackball mode the watch already streams a virtual surface-contact point.
+    // Treat deltas as physical rolling displacement, not as a noisy pointer input stream.
+    let Some((sx, sy)) = TRACKBALL_BALL_CONFIG.cursor_delta(dx, dy) else {
+        return None;
+    };
 
-    let now = std::time::Instant::now();
-    let dt = s.last_touch_time
-        .map(|t| now.duration_since(t).as_secs_f64().clamp(0.004, 0.1))
-        .unwrap_or(1.0 / 60.0);
-    s.last_touch_time = Some(now);
-
-    dx = s.one_euro_dx.filter_dt(dx, dt);
-    dy = s.one_euro_dy.filter_dt(dy, dt);
-
-    let user_scale = s.config.sensitivity.max(0.05);
-    dx *= user_scale;
-    dy *= user_scale;
-
-    let p = payload.pressure;
-    if p > 0 {
-        let gain = 0.7 + 0.5 * (p as f64 / 255.0);
-        dx *= gain;
-        dy *= gain;
-    }
-
-    let cfg = s.config.accel;
-    let (sx, sy) = engine::accel::apply_curve_2d(dx, dy, &cfg);
-    if sx * sx + sy * sy < 1e-8 {
-        return;
-    }
-
-    s.trackball.drive(sx, sy);
+    // True trackball semantics:
+    // - while the finger is rolling the ball, the cursor follows only the current angular change
+    // - if the ball stops under the finger, the cursor stops immediately
+    // Inertia is started only by an explicit FLING gesture after release.
+    Some((sx, sy))
 }
 
 // ── Input event handler ───────────────────────────────────────────────────────
@@ -951,7 +905,16 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                     }
                 }
                 InputMode::Trackball => {
-                    process_trackball_touch(&mut s, payload);
+                    let output = process_trackball_touch(&mut s, payload);
+                    drop(s);
+                    if let Some((sx, sy)) = output {
+                        dispatch_input_action(app, move || match injector::create_injector() {
+                            Ok(inj) => {
+                                let _ = inj.move_relative(sx, sy);
+                            }
+                            Err(e) => log::warn!("Injector unavailable: {}", e),
+                        });
+                    }
                 }
             }
         }
@@ -1012,5 +975,119 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 }
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::packets::TouchPayload;
+
+    fn touch_payload(phase: TouchPhase, x: i16, y: i16) -> TouchPayload {
+        TouchPayload {
+            touch_id: 0,
+            phase: phase as u8,
+            x,
+            y,
+            pressure: 0,
+            _pad: 0,
+        }
+    }
+
+    fn trackball_state() -> AppState {
+        let mut cfg = AppConfig::default();
+        cfg.mode = InputMode::Trackball;
+        AppState::new(cfg)
+    }
+
+    fn trackpad_state() -> AppState {
+        let mut cfg = AppConfig::default();
+        cfg.mode = InputMode::Trackpad;
+        AppState::new(cfg)
+    }
+
+    #[test]
+    fn decode_trackball_axis_preserves_fractional_precision() {
+        assert!((TRACKBALL_BALL_CONFIG.decode_axis(1) - (1.0 / 32.0)).abs() < 1e-9);
+        assert!((TRACKBALL_BALL_CONFIG.decode_axis(-3) + (3.0 / 32.0)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn trackball_touch_emits_fractional_cursor_delta() {
+        let mut state = trackball_state();
+
+        let began = touch_payload(TouchPhase::Began, 0, 0);
+        assert_eq!(process_trackball_touch(&mut state, began), None);
+
+        let moved = touch_payload(TouchPhase::Moved, 2, 0);
+        let output = process_trackball_touch(&mut state, moved).expect("fractional movement expected");
+        assert!(output.0 > 0.02 && output.0 < 0.04, "unexpected dx: {}", output.0);
+        assert!(output.1.abs() < 1e-9);
+    }
+
+    #[test]
+    fn trackpad_touch_uses_same_virtual_ball_kinematics_without_inertia() {
+        let mut state = trackpad_state();
+
+        assert_eq!(process_trackpad_touch(&mut state, touch_payload(TouchPhase::Began, 0, 0)), None);
+        let output = process_trackpad_touch(&mut state, touch_payload(TouchPhase::Moved, 200, 0))
+            .expect("surface movement expected");
+        assert!(output.0 > 0.3 && output.0 < 0.6, "unexpected dx: {}", output.0);
+        assert!(output.1.abs() < 1e-9);
+        assert_eq!(process_trackpad_touch(&mut state, touch_payload(TouchPhase::Ended, 200, 0)), None);
+    }
+
+    #[test]
+    fn trackpad_micro_adjustments_accumulate_into_path() {
+        let mut state = trackpad_state();
+        let mut cursor_x = 0.0;
+
+        assert_eq!(process_trackpad_touch(&mut state, touch_payload(TouchPhase::Began, 0, 0)), None);
+        for step in [8_i16, 16, 24, 32, 40] {
+            if let Some((dx, _)) = process_trackpad_touch(&mut state, touch_payload(TouchPhase::Moved, step, 0)) {
+                cursor_x += dx;
+            }
+        }
+
+        assert!(cursor_x > 0.05, "micro adjustments were lost: {}", cursor_x);
+    }
+
+    #[test]
+    fn trackpad_stops_immediately_when_surface_stops() {
+        let mut state = trackpad_state();
+
+        assert_eq!(process_trackpad_touch(&mut state, touch_payload(TouchPhase::Began, 0, 0)), None);
+        let first = process_trackpad_touch(&mut state, touch_payload(TouchPhase::Moved, 120, 0));
+        let second = process_trackpad_touch(&mut state, touch_payload(TouchPhase::Moved, 120, 0));
+
+        assert!(first.is_some(), "initial movement should move the cursor");
+        assert_eq!(second, None, "cursor must stop when surface delta becomes zero");
+    }
+
+    #[test]
+    fn trackpad_diagonal_motion_stays_diagonal() {
+        let mut state = trackpad_state();
+        let mut cursor = (0.0, 0.0);
+
+        assert_eq!(process_trackpad_touch(&mut state, touch_payload(TouchPhase::Began, 0, 0)), None);
+        for (x, y) in [(100_i16, 100_i16), (200, 200), (300, 300)] {
+            if let Some((dx, dy)) = process_trackpad_touch(&mut state, touch_payload(TouchPhase::Moved, x, y)) {
+                cursor.0 += dx;
+                cursor.1 += dy;
+            }
+        }
+
+        let ratio = cursor.0 / cursor.1;
+        assert!(ratio > 0.95 && ratio < 1.05, "diagonal skew too large: {:?}", cursor);
+    }
+
+    #[test]
+    fn trackball_touch_stops_after_end_even_if_position_is_held() {
+        let mut state = trackball_state();
+
+        assert_eq!(process_trackball_touch(&mut state, touch_payload(TouchPhase::Began, 0, 0)), None);
+        assert!(process_trackball_touch(&mut state, touch_payload(TouchPhase::Moved, 64, 0)).is_some());
+        assert_eq!(process_trackball_touch(&mut state, touch_payload(TouchPhase::Ended, 64, 0)), None);
+        assert_eq!(process_trackball_touch(&mut state, touch_payload(TouchPhase::Began, 64, 0)), None);
     }
 }

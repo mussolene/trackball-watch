@@ -20,9 +20,14 @@ struct TrackballView: View {
     @State private var lastTapAt: Date = .distantPast
     /// 1–255 from drag speed; forwarded in TOUCH for host gain.
     @State private var pressureByte: UInt8 = 180
+    /// Virtual contact point of the ball against the desktop surface.
+    /// This stays in local ball-surface units; the host maps it to screen pixels.
+    @State private var virtualContactPoint: CGPoint = .zero
     /// Recent touch positions for accurate fling velocity estimation.
     @State private var velocityHistory: [(time: Date, point: CGPoint)] = []
     private let velocityWindowSec: Double = 0.08
+    /// Fixed-point scale for streaming sub-point trackball motion to the host.
+    private let virtualContactPacketScale: CGFloat = 32.0
 
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
@@ -62,7 +67,6 @@ struct TrackballView: View {
     // MARK: - Drag handlers
 
     private func onDragChanged(_ value: DragGesture.Value, diameter: CGFloat) {
-        let size = CGSize(width: diameter, height: diameter)
         if !isDragging {
             isDragging = true
             dragStart = value.location
@@ -70,9 +74,10 @@ struct TrackballView: View {
             lastDragPoint = value.location
             angularVelocity = .zero
             pressureByte = 180
+            virtualContactPoint = .zero
             velocityHistory.removeAll()
             velocityHistory.append((time: .now, point: value.location))
-            sessionManager.send(touchPacket(.began, pt: value.location, in: size))
+            sessionManager.send(virtualTouchPacket(.began))
             WKInterfaceDevice.current().play(.start)
         } else {
             let dx = value.location.x - lastDragPoint.x
@@ -83,27 +88,28 @@ struct TrackballView: View {
             if velocityHistory.count > 12 { velocityHistory.removeFirst() }
 
             applyDragRotation(dx: dx, dy: dy, diameter: diameter, location: value.location)
+            virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + dx)
+            virtualContactPoint.y = clampVirtualAxis(virtualContactPoint.y + dy)
 
             let speed = hypot(dx, dy)
             pressureByte = UInt8(clamping: Int(min(255.0, max(1.0, 24.0 + speed * 5.5))))
-            sessionManager.send(touchPacket(.moved, pt: value.location, in: size))
+            sessionManager.send(virtualTouchPacket(.moved))
         }
     }
 
     private func onDragEnded(_ value: DragGesture.Value, diameter: CGFloat) {
         defer { isDragging = false }
-        let size = CGSize(width: diameter, height: diameter)
         let dist = hypot(value.location.x - dragStart.x, value.location.y - dragStart.y)
         let dur  = Date().timeIntervalSince(dragStartTime)
         if dist < 8 && dur < 0.28 {
             handleTap()
-            sessionManager.send(touchPacket(.ended, pt: value.location, in: size))
+            sessionManager.send(virtualTouchPacket(.ended))
             return
         }
         let (vx, vy) = computeFlingVelocity()
         let pScale = CGFloat(max(0.35, min(1.75, Double(pressureByte) / 128.0)))
         sendFling(vx: vx * pScale, vy: vy * pScale, diameter: diameter)
-        sessionManager.send(touchPacket(.ended, pt: value.location, in: size))
+        sessionManager.send(virtualTouchPacket(.ended))
 
         let r = Double(diameter / 2.0)
         if r > 0 {
@@ -219,11 +225,26 @@ struct TrackballView: View {
         return Int16(clamping: Int((t * 32767.0).rounded()))
     }
 
+    private func clampVirtualAxis(_ value: CGFloat) -> CGFloat {
+        guard value.isFinite else { return 0 }
+        return max(min(value, CGFloat(Int16.max)), CGFloat(Int16.min))
+    }
+
     private func touchPacket(_ phase: TouchPhase, pt: CGPoint, in size: CGSize) -> TBPPacket {
         TBPPacket.touch(touchId: 0, phase: phase,
                         x: norm(pt.x, size: size.width),
                         y: norm(pt.y, size: size.height),
                         pressure: pressureByte)
+    }
+
+    private func virtualTouchPacket(_ phase: TouchPhase) -> TBPPacket {
+        TBPPacket.touch(
+            touchId: 0,
+            phase: phase,
+            x: Int16(clamping: Int((virtualContactPoint.x * virtualContactPacketScale).rounded())),
+            y: Int16(clamping: Int((virtualContactPoint.y * virtualContactPacketScale).rounded())),
+            pressure: 0
+        )
     }
 
     private func sendFling(vx: CGFloat, vy: CGFloat, diameter: CGFloat) {

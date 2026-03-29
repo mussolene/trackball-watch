@@ -1,11 +1,53 @@
 # TrackBall Watch
 
-Turn your Apple Watch into a precision input device for a cross-platform desktop host.
+TrackBall Watch is a wearable-first, cross-device input platform in active development.
 
-[![CI](https://github.com/your-org/trackball-watch/actions/workflows/ci.yml/badge.svg)](https://github.com/your-org/trackball-watch/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/your-org/trackball-watch)](https://github.com/your-org/trackball-watch/releases)
+The product starts with Apple Watch as a precision pointing device for a desktop host, but the target product is broader:
+
+- wearable cursor control with trackball-style mechanics
+- multi-host switching
+- keyboard + pointer workflows around a phone or watch hub
+- shared clipboard / input buffer across connected hosts
+- short voice input and assistant-assisted correction
+- fast capture of tasks, reminders, and events
+
+Today the repository contains the first production line of that platform:
+
+- desktop host for macOS / Windows
+- Apple mobile bundle
+  - iPhone companion / relay
+  - Apple Watch client
+
+This is not yet the final product shape. The current codebase is the first implementation of the input layer that the broader product will build on.
 
 ---
+
+## Product Vision
+
+The long-term goal is to make wearable devices useful as real input tools, not just remote-control accessories.
+
+TrackBall Watch is being built as a global input product for people who move between machines, work from the keyboard, and need a fast secondary control channel that is always on the body.
+
+The intended product stack is:
+
+1. low-latency wearable pointer input
+2. keyboard and clipboard workflows across hosts
+3. voice input and command capture from the wrist
+4. assistant-assisted validation, correction, and action routing
+5. capture of reminders, tasks, and events from quick natural input
+
+The core engineering rule is that real-time input stays deterministic. Assistant behavior is layered on top where ambiguity exists, but never placed in the hot path of pointer motion.
+
+## Current Focus
+
+The repository is currently focused on the first hard part:
+
+- precise cursor control
+- stable trackball-style mechanics
+- low-latency relay from watch to desktop
+- clicks, scroll, host switching, and core pointer interactions
+
+This stage matters because the rest of the product only makes sense if the input layer is fast, predictable, and good enough for real work.
 
 ## How It Works
 
@@ -34,12 +76,12 @@ Apple Watch 7
 
 ---
 
-## Features
+## Current Features
 
 | Feature | Description |
 |---------|-------------|
-| **Trackpad mode** | Direct cursor control with S-curve acceleration |
-| **Trackball mode** | Fling with inertia physics, friction configurable |
+| **Trackpad mode** | Surface-driven virtual-ball cursor control |
+| **Trackball mode** | Virtual trackball with fling inertia |
 | **Tap** | Left click |
 | **Long press** | Right click |
 | **Double tap** | Double click |
@@ -75,14 +117,14 @@ Apple Watch 7
 ### Windows
 
 1. Download [`trackball-watch-windows-x64.msi`](../../releases/latest)
-2. Run installer → allow Windows Defender prompt (self-signed in beta, EV cert in release)
+2. Run installer → allow the standard Windows security prompt if shown
 3. Allow firewall rule for UDP port **47474** when prompted
 4. App starts in system tray automatically
 
 ### iPhone + Apple Watch
 
-**Beta:** Install via TestFlight link (see [Releases](../../releases))
-**Release:** Available on App Store (companion app, free)
+**Beta:** distribute through TestFlight or direct development install
+**Release:** App Store distribution once the Apple bundle is production-ready
 
 The Watch app installs automatically alongside the iPhone app.
 
@@ -162,7 +204,7 @@ cargo test --all-features
 
 ```bash
 cd tools/latency-tester
-cargo run -- --host 192.168.1.5 --count 200
+cargo run -- --host <desktop-host> --count 200
 ```
 
 ---
@@ -190,6 +232,21 @@ Protocol spec: [shared/protocol/tbp_spec.md](shared/protocol/tbp_spec.md)
 → Move to 5GHz Wi-Fi; check for interference; reduce Kalman R_noise
 
 ---
+
+## Product Direction
+
+The repository is moving toward a multi-client input platform rather than a single Apple Watch accessory app.
+
+Planned product directions:
+
+- additional wearable clients as sibling apps
+- richer multi-host workflows
+- external keyboard integration through a mobile hub
+- shared clipboard / shared input buffer across devices
+- quick command and dictation flows from wearable clients
+- assistant-assisted text normalization and action routing
+
+The intended differentiator is not "another remote mouse app". The intended differentiator is a better input model and a unified workflow across wearable, phone, keyboard, and desktop.
 
 ## Roadmap
 
