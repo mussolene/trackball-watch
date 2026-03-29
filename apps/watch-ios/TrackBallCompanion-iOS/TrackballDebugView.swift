@@ -523,7 +523,7 @@ private struct TrackballGlobeView: View {
             }
         }
 
-        context.stroke(backPath, with: .color(color.opacity(0.07)), lineWidth: lineWidth)
+        context.stroke(backPath, with: .color(color.opacity(0.72)), lineWidth: lineWidth)
         context.stroke(frontPath, with: .color(color), lineWidth: lineWidth)
     }
 }

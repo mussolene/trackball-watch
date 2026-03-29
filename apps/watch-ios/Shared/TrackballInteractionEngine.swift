@@ -37,9 +37,6 @@ final class TrackballInteractionEngine: ObservableObject {
     private var lastDragPoint: CGPoint = .zero
     private var lastTick: Date = .now
     private var lastTapAt: Date = .distantPast
-    private var velocityHistory: [(time: Date, point: CGPoint)] = []
-
-    private let velocityWindowSec: Double = 0.10
     private let virtualContactPacketScale: CGFloat = 32.0
     private let flingPacketScale: Double = 2.35
     private let tapMaxDistance: CGFloat = 8.0
@@ -53,7 +50,6 @@ final class TrackballInteractionEngine: ObservableObject {
         virtualContactPoint = .zero
         pressureByte = 180
         stoppedCoastByTouch = false
-        velocityHistory.removeAll()
     }
 
     var isCoasting: Bool {
@@ -76,19 +72,12 @@ final class TrackballInteractionEngine: ObservableObject {
             angularVelocity = .zero
             pressureByte = 180
             virtualContactPoint = .zero
-            velocityHistory.removeAll()
-            velocityHistory.append((time: now, point: point))
             return [touchEvent(.began)]
         }
 
         let dx = point.x - lastDragPoint.x
         let dy = point.y - lastDragPoint.y
         lastDragPoint = point
-
-        velocityHistory.append((time: now, point: point))
-        if velocityHistory.count > 12 {
-            velocityHistory.removeFirst()
-        }
 
         applyDragRotation(dx: dx, dy: dy, diameter: diameter, location: point)
         virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + dx)
@@ -126,24 +115,13 @@ final class TrackballInteractionEngine: ObservableObject {
 
         let radius = Double(diameter / 2.0)
         if radius > 0 {
-            let angularFlingVX = CGFloat(angularVelocity.y * radius / 60.0)
-            let angularFlingVY = CGFloat(angularVelocity.x * radius / 60.0)
-            let sampledFling = computeFlingVelocity()
-            let pressureScale = CGFloat(max(0.70, min(2.60, Double(pressureByte) / 104.0)))
-            let scaledSampledVX = sampledFling.vx * pressureScale
-            let scaledSampledVY = sampledFling.vy * pressureScale
-            let scaledAngularVX = angularFlingVX * pressureScale * 1.45
-            let scaledAngularVY = angularFlingVY * pressureScale * 1.45
-            let scaledVX = preferredFlingVelocity(sampled: scaledSampledVX, angular: scaledAngularVX)
-            let scaledVY = preferredFlingVelocity(sampled: scaledSampledVY, angular: scaledAngularVY)
-
-            angularVelocity = SIMD3<Double>(
-                Double(scaledVY) / radius * 60.0,
-                Double(scaledVX) / radius * 60.0,
-                0
-            )
-
-            return [touchEvent(.ended), flingEvent(vx: scaledVX, vy: scaledVY)]
+            let linearVX = CGFloat(angularVelocity.y * radius / 60.0)
+            let linearVY = CGFloat(angularVelocity.x * radius / 60.0)
+            if hypot(linearVX, linearVY) > 0.12 {
+                return [touchEvent(.ended), flingEvent(vx: linearVX, vy: linearVY)]
+            }
+            angularVelocity = .zero
+            return [touchEvent(.ended)]
         } else {
             angularVelocity = .zero
             return [touchEvent(.ended)]
@@ -247,71 +225,13 @@ final class TrackballInteractionEngine: ObservableObject {
 
         let omegaX = Double(dy) / radius
         let omegaY = Double(dx) / radius
-        let omegaZ = zSpin(
-            location: location,
-            dx: dx,
-            dy: dy,
-            center: CGPoint(x: diameter / 2.0, y: diameter / 2.0),
-            radius: CGFloat(radius)
-        )
-        let omega = SIMD3<Double>(omegaX, omegaY, omegaZ)
+        let _ = location
+        let omega = SIMD3<Double>(omegaX, omegaY, 0)
         let angle = simd_length(omega)
         guard angle > 1e-6 else { return }
 
         let deltaRotation = simd_quatd(angle: angle, axis: omega / angle)
         orientation = (deltaRotation * orientation).normalized
         angularVelocity = omega * 60.0
-    }
-
-    private func zSpin(
-        location: CGPoint,
-        dx: CGFloat,
-        dy: CGFloat,
-        center: CGPoint,
-        radius: CGFloat
-    ) -> Double {
-        let rx = Double(location.x - center.x) / Double(radius)
-        let ry = Double(location.y - center.y) / Double(radius)
-        guard rx * rx + ry * ry < 0.85 * 0.85 else { return 0 }
-        return (rx * Double(dy) - ry * Double(dx)) / Double(radius) * 0.4
-    }
-
-    private func computeFlingVelocity() -> (vx: CGFloat, vy: CGFloat) {
-        let now = Date()
-        let window = velocityHistory.filter { now.timeIntervalSince($0.time) < velocityWindowSec }
-        guard window.count >= 2 else { return (0, 0) }
-
-        var sumWeights = 0.0
-        var weightedVX = 0.0
-        var weightedVY = 0.0
-
-        for index in 1..<window.count {
-            let dt = window[index].time.timeIntervalSince(window[index - 1].time)
-            guard dt > 1e-4 else { continue }
-
-            let age = now.timeIntervalSince(window[index].time)
-            let weight = exp(-age * 20.0)
-            weightedVX += weight * Double(window[index].point.x - window[index - 1].point.x) / dt
-            weightedVY += weight * Double(window[index].point.y - window[index - 1].point.y) / dt
-            sumWeights += weight
-        }
-
-        guard sumWeights > 0 else { return (0, 0) }
-        return (
-            CGFloat(weightedVX / sumWeights / 60.0),
-            CGFloat(weightedVY / sumWeights / 60.0)
-        )
-    }
-
-    private func preferredFlingVelocity(sampled: CGFloat, angular: CGFloat) -> CGFloat {
-        let sampledMagnitude = abs(sampled)
-        let angularMagnitude = abs(angular)
-        if angularMagnitude > sampledMagnitude * 1.25 {
-            return angular
-        }
-        if sampledMagnitude > angularMagnitude * 1.25 {
-            return sampled
-        }
-        return sampled * 0.35 + angular * 0.65
     }
 }
