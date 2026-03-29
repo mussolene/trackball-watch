@@ -14,80 +14,65 @@ use tauri::{
     Emitter, Manager,
 };
 
-use engine::kalman::{Kalman2D, KalmanConfig};
-use engine::one_euro::OneEuroFilter;
+use engine::pointing_device::{DriverMode, PointingDeviceState};
 use engine::trackball::TrackballState;
-use engine::virtual_ball::VirtualBallConfig;
+use engine::virtual_ball::{MotionDecision, MotionTelemetry};
 use protocol::packets::{GestureType, TouchPhase};
 use server::udp::{InputEvent, UdpServer};
 use settings::config::{AppConfig, Hand, InputMode};
 
-const TRACKPAD_BALL_CONFIG: VirtualBallConfig = VirtualBallConfig {
-    packet_scale: 400.0,
-    roll_gain: 0.85,
-    jitter_deadzone: 0.01,
-    max_step: 28.0,
-};
-
-const TRACKBALL_BALL_CONFIG: VirtualBallConfig = VirtualBallConfig {
-    packet_scale: 32.0,
-    roll_gain: 0.42,
-    jitter_deadzone: 0.02,
-    max_step: 24.0,
-};
-
 /// Shared application state (input pipeline + connection info).
 struct AppState {
     config: AppConfig,
-    kalman: Kalman2D,
+    pointing_device: PointingDeviceState,
     trackball: TrackballState,
-    /// Last raw TBP coordinates (for delta-based pointer motion).
-    last_raw_x: f64,
-    last_raw_y: f64,
-    last_touch_x: f64,
-    last_touch_y: f64,
-    smoothed_dx: f64,
-    smoothed_dy: f64,
-    /// One-Euro filters for dx/dy smoothing (replace adaptive EMA).
-    one_euro_dx: OneEuroFilter,
-    one_euro_dy: OneEuroFilter,
-    /// Timestamp of last TOUCH_MOVED packet — used to compute actual dt for One Euro filter.
-    last_touch_time: Option<std::time::Instant>,
     /// Counter for throttling STATE_FEEDBACK packets (~10 Hz = every 6 coast frames).
     feedback_frame_count: u8,
     connected_peer: Option<ConnectedPeer>,
     /// Send raw packets to the connected peer via the UDP server socket.
     udp_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
+    motion_debug: bool,
 }
 
 impl AppState {
     fn new(config: AppConfig) -> Self {
-        let kalman = Kalman2D::new(KalmanConfig {
-            q_pos: config.kalman_q_pos,
-            q_vel: config.kalman_q_vel,
-            r_noise: config.kalman_r_noise,
-        });
         let trackball = TrackballState::new(config.trackball_friction, 0.5);
-        let (mc, beta) = config.smoothing_profile.params(config.one_euro_min_cutoff, config.one_euro_beta);
-        let one_euro_dx = OneEuroFilter::new(60.0, mc, beta, 1.0);
-        let one_euro_dy = OneEuroFilter::new(60.0, mc, beta, 1.0);
         Self {
             config,
-            kalman,
+            pointing_device: PointingDeviceState::default(),
             trackball,
-            last_raw_x: 0.0,
-            last_raw_y: 0.0,
-            last_touch_x: 0.0,
-            last_touch_y: 0.0,
-            smoothed_dx: 0.0,
-            smoothed_dy: 0.0,
-            one_euro_dx,
-            one_euro_dy,
-            last_touch_time: None,
             feedback_frame_count: 0,
             connected_peer: None,
             udp_tx: None,
+            motion_debug: std::env::var("TRACKBALL_DEBUG_MOTION").map(|v| v != "0").unwrap_or(false),
         }
+    }
+}
+
+fn log_motion_telemetry(prefix: &str, telemetry: MotionTelemetry) {
+    match telemetry.decision {
+        MotionDecision::Applied => log::debug!(
+            "{prefix}: in=({:.4},{:.4}) speed={:.4} gain={:.4} out=({:.4},{:.4})",
+            telemetry.input_dx,
+            telemetry.input_dy,
+            telemetry.input_speed,
+            telemetry.gain,
+            telemetry.output_dx,
+            telemetry.output_dy
+        ),
+        MotionDecision::Deadzone => log::debug!(
+            "{prefix}: in=({:.4},{:.4}) speed={:.4} -> deadzone (thresholded)",
+            telemetry.input_dx,
+            telemetry.input_dy,
+            telemetry.input_speed
+        ),
+        MotionDecision::ZeroOutput => log::debug!(
+            "{prefix}: in=({:.4},{:.4}) speed={:.4} gain={:.4} -> zero output",
+            telemetry.input_dx,
+            telemetry.input_dy,
+            telemetry.input_speed,
+            telemetry.gain
+        ),
     }
 }
 
@@ -141,15 +126,8 @@ fn save_config(
     )> = None;
     {
         let mut s = state.lock().unwrap();
-        s.kalman = Kalman2D::new(KalmanConfig {
-            q_pos: config.kalman_q_pos,
-            q_vel: config.kalman_q_vel,
-            r_noise: config.kalman_r_noise,
-        });
+        s.pointing_device.reset();
         s.trackball = TrackballState::new(config.trackball_friction, 0.5);
-        let (mc, beta) = config.smoothing_profile.params(config.one_euro_min_cutoff, config.one_euro_beta);
-        s.one_euro_dx = OneEuroFilter::new(60.0, mc, beta, 1.0);
-        s.one_euro_dy = OneEuroFilter::new(60.0, mc, beta, 1.0);
         s.config = config;
         if let Some(tx) = s.udp_tx.clone() {
             pending_mode_push = Some((tx, s.config.mode, s.config.hand, s.config.trackball_friction));
@@ -730,16 +708,7 @@ fn trackball_coast_step(state: &Arc<Mutex<AppState>>, dt: f64, app: &tauri::AppH
 }
 
 fn reset_touch_pipeline(s: &mut AppState) {
-    s.kalman.reset();
-    s.smoothed_dx = 0.0;
-    s.smoothed_dy = 0.0;
-    s.last_raw_x = 0.0;
-    s.last_raw_y = 0.0;
-    s.last_touch_x = 0.0;
-    s.last_touch_y = 0.0;
-    s.one_euro_dx.reset();
-    s.one_euro_dy.reset();
-    s.last_touch_time = None;
+    s.pointing_device.reset();
 }
 
 fn process_trackpad_touch(
@@ -747,36 +716,22 @@ fn process_trackpad_touch(
     payload: protocol::packets::TouchPayload,
 ) -> Option<(f64, f64)> {
     let phase = TouchPhase::try_from(payload.phase).unwrap_or(TouchPhase::Moved);
-
     if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
         reset_touch_pipeline(s);
         s.trackball.stop();
         return None;
     }
-
-    let x = TRACKPAD_BALL_CONFIG.decode_axis(payload.x);
-    let y = TRACKPAD_BALL_CONFIG.decode_axis(payload.y);
-
     if phase == TouchPhase::Began {
         s.trackball.stop();
-        s.last_raw_x = x;
-        s.last_raw_y = y;
-        s.last_touch_x = x;
-        s.last_touch_y = y;
-        s.one_euro_dx.reset();
-        s.one_euro_dy.reset();
-        s.last_touch_time = None;
-        return None;
     }
-
-    let dx = x - s.last_raw_x;
-    let dy = y - s.last_raw_y;
-    s.last_raw_x = x;
-    s.last_raw_y = y;
-    s.last_touch_x = x;
-    s.last_touch_y = y;
-
-    TRACKPAD_BALL_CONFIG.cursor_delta(dx, dy)
+    let output = s.pointing_device.handle_touch(DriverMode::Trackpad, payload);
+    if let Some(output) = output {
+        if s.motion_debug {
+            log_motion_telemetry("trackpad", output.telemetry);
+        }
+        return Some((output.dx, output.dy));
+    }
+    None
 }
 
 fn process_trackball_touch(
@@ -790,39 +745,26 @@ fn process_trackball_touch(
         return None;
     }
 
-    let x = TRACKBALL_BALL_CONFIG.decode_axis(payload.x);
-    let y = TRACKBALL_BALL_CONFIG.decode_axis(payload.y);
-
     if phase == TouchPhase::Began {
         s.trackball.stop();
-        s.last_raw_x = x;
-        s.last_raw_y = y;
-        s.last_touch_x = x;
-        s.last_touch_y = y;
-        s.one_euro_dx.reset();
-        s.one_euro_dy.reset();
-        s.last_touch_time = None;
         return None;
     }
 
-    let dx = x - s.last_raw_x;
-    let dy = y - s.last_raw_y;
-    s.last_raw_x = x;
-    s.last_raw_y = y;
-    s.last_touch_x = x;
-    s.last_touch_y = y;
-
     // In trackball mode the watch already streams a virtual surface-contact point.
     // Treat deltas as physical rolling displacement, not as a noisy pointer input stream.
-    let Some((sx, sy)) = TRACKBALL_BALL_CONFIG.cursor_delta(dx, dy) else {
+    let output = s.pointing_device.handle_touch(DriverMode::Trackball, payload);
+    let Some(output) = output else {
         return None;
     };
+    if s.motion_debug {
+        log_motion_telemetry("trackball", output.telemetry);
+    }
 
     // True trackball semantics:
     // - while the finger is rolling the ball, the cursor follows only the current angular change
     // - if the ball stops under the finger, the cursor stops immediately
     // Inertia is started only by an explicit FLING gesture after release.
-    Some((sx, sy))
+    Some((output.dx, output.dy))
 }
 
 // ── Input event handler ───────────────────────────────────────────────────────
@@ -984,6 +926,7 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::engine::pointing_device::{DriverMode, PointingDeviceState};
     use crate::protocol::packets::TouchPayload;
 
     fn touch_payload(phase: TouchPhase, x: i16, y: i16) -> TouchPayload {
@@ -1010,49 +953,35 @@ mod tests {
     }
 
     #[test]
-    fn decode_trackball_axis_preserves_fractional_precision() {
-        assert!((TRACKBALL_BALL_CONFIG.decode_axis(1) - (1.0 / 32.0)).abs() < 1e-9);
-        assert!((TRACKBALL_BALL_CONFIG.decode_axis(-3) + (3.0 / 32.0)).abs() < 1e-9);
-    }
-
-    #[test]
-    fn trackball_touch_emits_fractional_cursor_delta() {
-        let mut state = trackball_state();
-
-        let began = touch_payload(TouchPhase::Began, 0, 0);
-        assert_eq!(process_trackball_touch(&mut state, began), None);
-
-        let moved = touch_payload(TouchPhase::Moved, 2, 0);
-        let output = process_trackball_touch(&mut state, moved).expect("fractional movement expected");
-        assert!(output.0 > 0.02 && output.0 < 0.04, "unexpected dx: {}", output.0);
-        assert!(output.1.abs() < 1e-9);
-    }
-
-    #[test]
-    fn trackpad_touch_uses_same_virtual_ball_kinematics_without_inertia() {
-        let mut state = trackpad_state();
-
-        assert_eq!(process_trackpad_touch(&mut state, touch_payload(TouchPhase::Began, 0, 0)), None);
-        let output = process_trackpad_touch(&mut state, touch_payload(TouchPhase::Moved, 200, 0))
-            .expect("surface movement expected");
-        assert!(output.0 > 0.3 && output.0 < 0.6, "unexpected dx: {}", output.0);
-        assert!(output.1.abs() < 1e-9);
-        assert_eq!(process_trackpad_touch(&mut state, touch_payload(TouchPhase::Ended, 200, 0)), None);
-    }
-
-    #[test]
     fn trackpad_micro_adjustments_accumulate_into_path() {
-        let mut state = trackpad_state();
+        let mut driver = PointingDeviceState::default();
         let mut cursor_x = 0.0;
 
-        assert_eq!(process_trackpad_touch(&mut state, touch_payload(TouchPhase::Began, 0, 0)), None);
+        assert_eq!(driver.handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Began, 0, 0)).is_some(), false);
         for step in [8_i16, 16, 24, 32, 40] {
-            if let Some((dx, _)) = process_trackpad_touch(&mut state, touch_payload(TouchPhase::Moved, step, 0)) {
-                cursor_x += dx;
+            if let Some(output) = driver.handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Moved, step, 0)) {
+                cursor_x += output.dx;
             }
         }
 
-        assert!(cursor_x > 0.05, "micro adjustments were lost: {}", cursor_x);
+        assert!(cursor_x > 0.03, "micro adjustments were lost: {}", cursor_x);
+        assert!(cursor_x < 0.25, "micro adjustments are still too aggressive: {}", cursor_x);
+    }
+
+    #[test]
+    fn trackpad_precision_motion_uses_lower_gain_than_fast_motion() {
+        let cfg = PointingDeviceState::config_for(DriverMode::Trackpad);
+        let slow = cfg.cursor_delta(0.02, 0.0).expect("slow motion");
+        let fast = cfg.cursor_delta(1.0, 0.0).expect("fast motion");
+        assert!(slow.0 / 0.02 < fast.0 / 1.0, "slow motion should use a lower precision gain");
+    }
+
+    #[test]
+    fn trackball_precision_motion_uses_lower_gain_than_fast_motion() {
+        let cfg = PointingDeviceState::config_for(DriverMode::Trackball);
+        let slow = cfg.cursor_delta(0.07, 0.0).expect("slow motion");
+        let fast = cfg.cursor_delta(1.0, 0.0).expect("fast motion");
+        assert!(slow.0 / 0.07 < fast.0 / 1.0, "slow motion should use a lower precision gain");
     }
 
     #[test]

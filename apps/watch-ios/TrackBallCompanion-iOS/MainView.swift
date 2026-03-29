@@ -66,6 +66,14 @@ struct MainView: View {
                     }
                 }
 
+                Section("Additional Input") {
+                    NavigationLink {
+                        TrackballDebugView()
+                    } label: {
+                        Label("Trackball Remote", systemImage: "dot.squareshape.split.2x2")
+                    }
+                }
+
                 // Stats
                 if relay.isRunning && relay.packetsRelayed > 0 {
                     Section {

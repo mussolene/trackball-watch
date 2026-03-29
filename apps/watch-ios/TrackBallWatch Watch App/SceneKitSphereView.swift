@@ -119,9 +119,8 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
         let w = CGFloat(sz)
         let graphite = CGColor(red: 0.09, green: 0.12, blue: 0.18, alpha: 1.0)
         let deep = CGColor(red: 0.05, green: 0.07, blue: 0.11, alpha: 1.0)
-        let cyan = CGColor(red: 0.38, green: 0.90, blue: 0.97, alpha: 1.0)
-        let violet = CGColor(red: 0.49, green: 0.38, blue: 1.0, alpha: 1.0)
         let white = CGColor(red: 0.96, green: 0.98, blue: 1.0, alpha: 1.0)
+        let grid = CGColor(red: 0.90, green: 0.94, blue: 1.0, alpha: 0.26)
 
         // Dark base
         ctx.setFillColor(deep)
@@ -143,26 +142,21 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
             )
         }
 
-        // Orbital arc
-        ctx.setStrokeColor(cyan)
-        ctx.setLineWidth(w * 0.085)
-        ctx.setLineCap(.round)
-        ctx.addArc(center: CGPoint(x: w * 0.50, y: w * 0.52),
-                   radius: w * 0.32,
-                   startAngle: -.pi * 0.42,
-                   endAngle: .pi * 0.18,
-                   clockwise: false)
-        ctx.strokePath()
+        // Longitude grid
+        ctx.setStrokeColor(grid)
+        ctx.setLineWidth(max(1.0, w * 0.008))
+        for x in stride(from: w * 0.08, through: w * 0.92, by: w * 0.14) {
+            ctx.strokeEllipse(in: CGRect(x: x - w * 0.18, y: w * 0.10, width: w * 0.36, height: w * 0.80))
+        }
 
-        // Secondary accent node
-        ctx.setFillColor(violet)
-        let dotR = w * 0.055
-        ctx.fillEllipse(in: CGRect(x: w * 0.25 - dotR, y: w * 0.70 - dotR,
-                                   width: dotR * 2, height: dotR * 2))
+        // Latitude grid
+        for y in stride(from: w * 0.18, through: w * 0.82, by: w * 0.16) {
+            ctx.strokeEllipse(in: CGRect(x: w * 0.10, y: y - w * 0.10, width: w * 0.80, height: w * 0.20))
+        }
 
         // Specular lobe
-        ctx.setFillColor(white)
-        ctx.fillEllipse(in: CGRect(x: w * 0.25, y: w * 0.20, width: w * 0.20, height: w * 0.14))
+        ctx.setFillColor(white.copy(alpha: 0.14)!)
+        ctx.fillEllipse(in: CGRect(x: w * 0.22, y: w * 0.18, width: w * 0.22, height: w * 0.15))
 
         guard let cgImage = ctx.makeImage() else { return nil }
         return UIImage(cgImage: cgImage)
@@ -179,23 +173,15 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
         ) else { return nil }
 
         let w = CGFloat(sz)
-        let cyan = CGColor(red: 0.38, green: 0.90, blue: 0.97, alpha: 0.92)
-        let violet = CGColor(red: 0.49, green: 0.38, blue: 1.0, alpha: 0.82)
-
-        ctx.setStrokeColor(cyan)
-        ctx.setLineWidth(w * 0.060)
-        ctx.setLineCap(.round)
-        ctx.addArc(center: CGPoint(x: w * 0.50, y: w * 0.52),
-                   radius: w * 0.32,
-                   startAngle: -.pi * 0.42,
-                   endAngle: .pi * 0.18,
-                   clockwise: false)
-        ctx.strokePath()
-
-        ctx.setFillColor(violet)
-        let dotR = w * 0.045
-        ctx.fillEllipse(in: CGRect(x: w * 0.25 - dotR, y: w * 0.70 - dotR,
-                                   width: dotR * 2, height: dotR * 2))
+        let gridGlow = CGColor(red: 0.86, green: 0.92, blue: 1.0, alpha: 0.10)
+        ctx.setStrokeColor(gridGlow)
+        ctx.setLineWidth(max(0.8, w * 0.005))
+        for x in stride(from: w * 0.08, through: w * 0.92, by: w * 0.14) {
+            ctx.strokeEllipse(in: CGRect(x: x - w * 0.18, y: w * 0.10, width: w * 0.36, height: w * 0.80))
+        }
+        for y in stride(from: w * 0.18, through: w * 0.82, by: w * 0.16) {
+            ctx.strokeEllipse(in: CGRect(x: w * 0.10, y: y - w * 0.10, width: w * 0.80, height: w * 0.20))
+        }
 
         guard let cgImage = ctx.makeImage() else { return nil }
         return UIImage(cgImage: cgImage)
