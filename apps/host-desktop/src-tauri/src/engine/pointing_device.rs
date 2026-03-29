@@ -27,12 +27,12 @@ const TRACKPAD_BALL_CONFIG: VirtualBallConfig = VirtualBallConfig {
 
 const TRACKBALL_BALL_CONFIG: VirtualBallConfig = VirtualBallConfig {
     packet_scale: 32.0,
-    fine_gain: 0.24,
-    roll_gain: 0.42,
-    jitter_deadzone: 0.012,
-    precision_speed: 0.06,
-    travel_speed: 0.55,
-    max_step: 24.0,
+    fine_gain: 0.28,
+    roll_gain: 0.48,
+    jitter_deadzone: 0.008,
+    precision_speed: 0.05,
+    travel_speed: 0.50,
+    max_step: 22.0,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -76,27 +76,8 @@ impl PointingDeviceState {
         self.last_raw_x = x;
         self.last_raw_y = y;
 
-        if mode == DriverMode::Trackball {
-            let decision = if dx * dx + dy * dy < 1e-10 {
-                MotionDecision::ZeroOutput
-            } else {
-                MotionDecision::Applied
-            };
-            let telemetry = MotionTelemetry {
-                input_dx: dx,
-                input_dy: dy,
-                input_speed: (dx * dx + dy * dy).sqrt(),
-                gain: 1.0,
-                output_dx: dx,
-                output_dy: dy,
-                decision,
-            };
-            return match decision {
-                MotionDecision::Applied => Some(DriverOutput { dx, dy, telemetry }),
-                MotionDecision::Deadzone | MotionDecision::ZeroOutput => None,
-            };
-        }
-
+        // Trackball: same speed-dependent gain as trackpad (slow = precise, fast = travel),
+        // so finger roll maps to cursor like a mechanical ball, not raw surface deltas.
         let telemetry = config.process_delta(dx, dy);
         match telemetry.decision {
             MotionDecision::Applied => Some(DriverOutput {

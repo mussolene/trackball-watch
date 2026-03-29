@@ -38,12 +38,18 @@ final class TrackballInteractionEngine: ObservableObject {
     private var lastTick: Date = .now
     private var lastTapAt: Date = .distantPast
     private let virtualContactPacketScale: CGFloat = 32.0
+
+    /// Keep `x * virtualContactPacketScale` within Int16 range for TBP payloads.
+    private var maxVirtualContact: CGFloat {
+        CGFloat(Int16.max) / virtualContactPacketScale
+    }
     private let flingPacketScale: Double = 2.35
     private let tapMaxDistance: CGFloat = 8.0
     private let tapMaxDuration: TimeInterval = 0.28
     private let doubleTapWindow: TimeInterval = 0.32
     private let longPressMinDuration: TimeInterval = 0.48
-    private let dragNoiseThreshold: CGFloat = 0.35
+    /// Sub-point noise; `lastDragPoint` is only advanced when movement meets this (avoids host desync).
+    private let dragNoiseThreshold: CGFloat = 0.22
 
     func resetInteractionState() {
         isDragging = false
@@ -51,6 +57,8 @@ final class TrackballInteractionEngine: ObservableObject {
         virtualContactPoint = .zero
         pressureByte = 180
         stoppedCoastByTouch = false
+        lastDragPoint = .zero
+        dragStart = .zero
     }
 
     var isCoasting: Bool {
@@ -72,16 +80,19 @@ final class TrackballInteractionEngine: ObservableObject {
             lastDragPoint = point
             angularVelocity = .zero
             pressureByte = 180
+            // New contact: baseline for both host deltas and packet coords (avoids cursor jumps).
+            virtualContactPoint = .zero
             return [touchEvent(.began)]
         }
 
         let dx = point.x - lastDragPoint.x
         let dy = point.y - lastDragPoint.y
-        lastDragPoint = point
 
         guard hypot(dx, dy) >= dragNoiseThreshold else {
             return []
         }
+
+        lastDragPoint = point
 
         applyDragRotation(dx: dx, dy: dy, diameter: diameter, location: point)
         virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + dx)
@@ -105,6 +116,13 @@ final class TrackballInteractionEngine: ObservableObject {
 
         if stoppedCoastByTouch {
             stoppedCoastByTouch = false
+            // Touch-down while coasting stopped inertia; short lift-off can still be a click.
+            let tapDistanceThreshold = max(tapMaxDistance, diameter * 0.08)
+            let distance = hypot(point.x - dragStart.x, point.y - dragStart.y)
+            let duration = Date().timeIntervalSince(dragStartTime)
+            if distance < tapDistanceThreshold && duration < tapMaxDuration {
+                return tapEvents() + [touchEvent(.ended)]
+            }
             return [touchEvent(.ended)]
         }
 
@@ -184,21 +202,41 @@ final class TrackballInteractionEngine: ObservableObject {
         return delta
     }
 
-    func currentTouchEvent(phase: TrackballEngineTouchPhase, pressure: UInt8 = 0) -> TrackballEngineEvent {
-        .touch(
+    func currentTouchEvent(phase: TrackballEngineTouchPhase, pressure: UInt8? = nil) -> TrackballEngineEvent {
+        let p: UInt8
+        if let pressure {
+            p = pressure
+        } else {
+            switch phase {
+            case .began, .moved:
+                p = pressureByte
+            case .ended, .cancelled:
+                p = 0
+            }
+        }
+        return .touch(
             phase: phase,
             x: Int16(clamping: Int((virtualContactPoint.x * virtualContactPacketScale).rounded())),
             y: Int16(clamping: Int((virtualContactPoint.y * virtualContactPacketScale).rounded())),
-            pressure: pressure
+            pressure: p
         )
     }
 
     private func touchEvent(_ phase: TrackballEngineTouchPhase) -> TrackballEngineEvent {
-        .touch(
+        let pressure: UInt8
+        switch phase {
+        case .began:
+            pressure = pressureByte
+        case .moved:
+            pressure = pressureByte
+        case .ended, .cancelled:
+            pressure = 0
+        }
+        return .touch(
             phase: phase,
             x: Int16(clamping: Int((virtualContactPoint.x * virtualContactPacketScale).rounded())),
             y: Int16(clamping: Int((virtualContactPoint.y * virtualContactPacketScale).rounded())),
-            pressure: 0
+            pressure: pressure
         )
     }
 
@@ -220,7 +258,7 @@ final class TrackballInteractionEngine: ObservableObject {
 
     private func clampVirtualAxis(_ value: CGFloat) -> CGFloat {
         guard value.isFinite else { return 0 }
-        return max(min(value, CGFloat(Int16.max)), CGFloat(Int16.min))
+        return max(min(value, maxVirtualContact), -maxVirtualContact)
     }
 
     private func applyDragRotation(dx: CGFloat, dy: CGFloat, diameter: CGFloat, location: CGPoint) {

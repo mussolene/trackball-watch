@@ -60,30 +60,20 @@ struct TrackballView: View {
         )
     }
 
+    /// Fixed decorative bezel (does not rotate — only the sphere above does).
     @ViewBuilder
     private func orbitalHalo(d: CGFloat) -> some View {
         ZStack {
             Circle()
                 .stroke(
-                    AngularGradient(
-                        colors: [
-                            .clear,
-                            Color(red: 0.38, green: 0.90, blue: 0.97).opacity(engine.isDragging ? 0.95 : 0.72),
-                            .clear,
-                            Color(red: 0.49, green: 0.38, blue: 1.0).opacity(engine.isDragging ? 0.46 : 0.30),
-                            .clear
-                        ],
-                        center: .center
-                    ),
-                    style: StrokeStyle(lineWidth: max(4, d * 0.065), lineCap: .round)
+                    Color(red: 0.38, green: 0.90, blue: 0.97).opacity(engine.isDragging ? 0.55 : 0.38),
+                    style: StrokeStyle(lineWidth: max(3, d * 0.05), lineCap: .round)
                 )
-                .frame(width: d * 1.16, height: d * 1.16)
-                .rotationEffect(.degrees(-8))
-                .blur(radius: engine.isDragging ? 0.5 : 0.9)
+                .frame(width: d * 1.14, height: d * 1.14)
 
             Circle()
-                .stroke(Color(red: 0.38, green: 0.90, blue: 0.97).opacity(engine.isDragging ? 0.18 : 0.12), lineWidth: max(1, d * 0.018))
-                .frame(width: d * 1.26, height: d * 1.26)
+                .stroke(Color(red: 0.49, green: 0.38, blue: 1.0).opacity(engine.isDragging ? 0.35 : 0.22), lineWidth: max(1, d * 0.016))
+                .frame(width: d * 1.24, height: d * 1.24)
 
             Circle()
                 .fill(Color(red: 0.49, green: 0.38, blue: 1.0).opacity(engine.isDragging ? 0.95 : 0.82))

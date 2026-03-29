@@ -120,7 +120,6 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
         let graphite = CGColor(red: 0.09, green: 0.12, blue: 0.18, alpha: 1.0)
         let deep = CGColor(red: 0.05, green: 0.07, blue: 0.11, alpha: 1.0)
         let white = CGColor(red: 0.96, green: 0.98, blue: 1.0, alpha: 1.0)
-        let grid = CGColor(red: 0.90, green: 0.94, blue: 1.0, alpha: 0.26)
 
         // Dark base
         ctx.setFillColor(deep)
@@ -142,16 +141,21 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
             )
         }
 
-        // Longitude grid
-        ctx.setStrokeColor(grid)
-        ctx.setLineWidth(max(1.0, w * 0.008))
-        for x in stride(from: w * 0.06, through: w * 0.94, by: w * 0.08) {
-            ctx.strokeEllipse(in: CGRect(x: x - w * 0.18, y: w * 0.10, width: w * 0.36, height: w * 0.80))
+        // Meridian / parallel lines (equirectangular unwrap — reads as a ball with lat/long, not a spinning rim).
+        let meridian = CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.42)
+        ctx.setStrokeColor(meridian)
+        ctx.setLineWidth(max(0.6, w * 0.0035))
+        let meridianCount = 12
+        for i in 0 ... meridianCount {
+            let t = CGFloat(i) / CGFloat(meridianCount)
+            let x = w * 0.08 + t * (w * 0.84)
+            ctx.strokeEllipse(in: CGRect(x: x - w * 0.20, y: w * 0.08, width: w * 0.40, height: w * 0.84))
         }
-
-        // Latitude grid
-        for y in stride(from: w * 0.14, through: w * 0.86, by: w * 0.10) {
-            ctx.strokeEllipse(in: CGRect(x: w * 0.10, y: y - w * 0.10, width: w * 0.80, height: w * 0.20))
+        let parallelCount = 8
+        for j in 0 ... parallelCount {
+            let t = CGFloat(j) / CGFloat(parallelCount)
+            let y = w * 0.10 + t * (w * 0.80)
+            ctx.strokeEllipse(in: CGRect(x: w * 0.10, y: y - w * 0.11, width: w * 0.80, height: w * 0.22))
         }
 
         guard let cgImage = ctx.makeImage() else { return nil }
@@ -169,14 +173,20 @@ struct SceneKitSphereView: WKInterfaceObjectRepresentable {
         ) else { return nil }
 
         let w = CGFloat(sz)
-        let gridGlow = CGColor(red: 0.86, green: 0.92, blue: 1.0, alpha: 0.10)
+        let gridGlow = CGColor(red: 1.0, green: 1.0, blue: 1.0, alpha: 0.08)
         ctx.setStrokeColor(gridGlow)
-        ctx.setLineWidth(max(0.8, w * 0.005))
-        for x in stride(from: w * 0.06, through: w * 0.94, by: w * 0.08) {
-            ctx.strokeEllipse(in: CGRect(x: x - w * 0.18, y: w * 0.10, width: w * 0.36, height: w * 0.80))
+        ctx.setLineWidth(max(0.5, w * 0.003))
+        let meridianCount = 12
+        for i in 0 ... meridianCount {
+            let t = CGFloat(i) / CGFloat(meridianCount)
+            let x = w * 0.08 + t * (w * 0.84)
+            ctx.strokeEllipse(in: CGRect(x: x - w * 0.20, y: w * 0.08, width: w * 0.40, height: w * 0.84))
         }
-        for y in stride(from: w * 0.14, through: w * 0.86, by: w * 0.10) {
-            ctx.strokeEllipse(in: CGRect(x: w * 0.10, y: y - w * 0.10, width: w * 0.80, height: w * 0.20))
+        let parallelCount = 8
+        for j in 0 ... parallelCount {
+            let t = CGFloat(j) / CGFloat(parallelCount)
+            let y = w * 0.10 + t * (w * 0.80)
+            ctx.strokeEllipse(in: CGRect(x: w * 0.10, y: y - w * 0.11, width: w * 0.80, height: w * 0.22))
         }
 
         guard let cgImage = ctx.makeImage() else { return nil }
