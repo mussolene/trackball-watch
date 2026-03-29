@@ -43,6 +43,7 @@ final class TrackballInteractionEngine: ObservableObject {
     private let tapMaxDuration: TimeInterval = 0.28
     private let doubleTapWindow: TimeInterval = 0.32
     private let longPressMinDuration: TimeInterval = 0.48
+    private let dragNoiseThreshold: CGFloat = 0.35
 
     func resetInteractionState() {
         isDragging = false
@@ -71,13 +72,16 @@ final class TrackballInteractionEngine: ObservableObject {
             lastDragPoint = point
             angularVelocity = .zero
             pressureByte = 180
-            virtualContactPoint = .zero
             return [touchEvent(.began)]
         }
 
         let dx = point.x - lastDragPoint.x
         let dy = point.y - lastDragPoint.y
         lastDragPoint = point
+
+        guard hypot(dx, dy) >= dragNoiseThreshold else {
+            return []
+        }
 
         applyDragRotation(dx: dx, dy: dy, diameter: diameter, location: point)
         virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + dx)
