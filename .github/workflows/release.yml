@@ -13,6 +13,9 @@ jobs:
   build-macos:
     name: Build macOS (universal)
     runs-on: macos-15
+    env:
+      # secrets are not valid in step `if:` for workflow schema; use booleans from env instead.
+      HAS_APPLE_NOTARIZE: ${{ secrets.APPLE_ID != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -61,7 +64,7 @@ jobs:
             -output universal/trackball-watch-universal
 
       - name: Notarize (production only)
-        if: ${{ secrets.APPLE_ID != '' }}
+        if: env.HAS_APPLE_NOTARIZE == 'true'
         uses: Apple-Actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.APPLE_CERT_P12 }}
@@ -79,6 +82,8 @@ jobs:
   build-windows:
     name: Build Windows (x64)
     runs-on: windows-latest
+    env:
+      HAS_WINDOWS_SIGN: ${{ secrets.WINDOWS_CERT_THUMBPRINT != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -113,7 +118,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
       - name: Sign (EV cert, production only)
-        if: ${{ secrets.WINDOWS_CERT_THUMBPRINT != '' }}
+        if: env.HAS_WINDOWS_SIGN == 'true'
         run: |
           signtool sign /sha1 ${{ secrets.WINDOWS_CERT_THUMBPRINT }} /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
             apps\host-desktop\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi\*.msi
@@ -128,6 +133,10 @@ jobs:
   build-apple-mobile:
     name: Build Apple mobile archive
     runs-on: macos-15
+    env:
+      HAS_APPLE_DIST_CERT: ${{ secrets.APPLE_DIST_CERT_P12 != '' }}
+      HAS_APPLE_PROVISIONING_PROFILE: ${{ secrets.APPLE_PROVISIONING_PROFILE != '' }}
+      HAS_APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -139,14 +148,14 @@ jobs:
         run: cp apps/watch-ios/Local.xcconfig.example apps/watch-ios/Local.xcconfig
 
       - name: Import signing certificate
-        if: ${{ secrets.APPLE_DIST_CERT_P12 != '' }}
+        if: env.HAS_APPLE_DIST_CERT == 'true'
         uses: Apple-Actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.APPLE_DIST_CERT_P12 }}
           p12-password: ${{ secrets.APPLE_DIST_CERT_P12_PASSWORD }}
 
       - name: Download provisioning profiles
-        if: ${{ secrets.APPLE_PROVISIONING_PROFILE != '' }}
+        if: env.HAS_APPLE_PROVISIONING_PROFILE == 'true'
         uses: Apple-Actions/download-provisioning-profiles@v3
         with:
           bundle-id: com.trackball-watch.app
@@ -165,7 +174,7 @@ jobs:
             PRODUCT_BUNDLE_IDENTIFIER=com.trackball-watch.app
 
       - name: Upload to TestFlight
-        if: ${{ secrets.APPSTORE_API_PRIVATE_KEY != '' }}
+        if: env.HAS_APPSTORE_API_KEY == 'true'
         run: |
           echo "Apple upload pipeline requires explicit exportOptions.plist and ipa export."
           echo "Archive created at /tmp/trackball-apple-mobile.xcarchive"
