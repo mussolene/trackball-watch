@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-03-31
+
+### Fixed
+
+- **iOS Companion:** Trackball Remote finger marker used full-panel geometry while `DragGesture` reports positions in the inner `outerDiameter` ZStack — convert using the globe inset and align the hit test so the dot matches the visible sphere.
+
 ## [1.0.1] - 2026-03-31
 
 ### Fixed
