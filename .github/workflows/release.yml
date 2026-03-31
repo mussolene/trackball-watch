@@ -85,7 +85,7 @@ jobs:
             apps/host-desktop/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
             apps/host-desktop/src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
 
-  # ── Windows MSI ───────────────────────────────────────────────────────────
+  # ── Windows (MSI + NSIS .exe) ─────────────────────────────────────────────
   build-windows:
     name: Build Windows (x64)
     runs-on: windows-latest
@@ -129,12 +129,16 @@ jobs:
         run: |
           signtool sign /sha1 ${{ secrets.WINDOWS_CERT_THUMBPRINT }} /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
             apps\host-desktop\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\msi\*.msi
+          signtool sign /sha1 ${{ secrets.WINDOWS_CERT_THUMBPRINT }} /fd sha256 /tr http://timestamp.digicert.com /td sha256 `
+            apps\host-desktop\src-tauri\target\x86_64-pc-windows-msvc\release\bundle\nsis\*.exe
 
-      - name: Upload Windows MSI
+      - name: Upload Windows installers (MSI + NSIS)
         uses: actions/upload-artifact@v4
         with:
-          name: windows-msi
-          path: apps/host-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+          name: windows-installers
+          path: |
+            apps/host-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            apps/host-desktop/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
 
   # ── Apple mobile bundle (iPhone companion + embedded watch app) ───────────
   build-apple-mobile:
@@ -212,7 +216,7 @@ jobs:
       - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
-          name: windows-msi
+          name: windows-installers
           path: dist/windows
 
       - name: Extract CHANGELOG excerpt
@@ -234,3 +238,4 @@ jobs:
           files: |
             dist/macos/*.dmg
             dist/windows/*.msi
+            dist/windows/*.exe
