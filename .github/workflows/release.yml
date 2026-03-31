@@ -131,15 +131,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Same rationale as CI swift-check: use 16.4 on GitHub-hosted macos-15 for watch/iOS SDK + sim parity.
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.app
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app
 
       - name: Prepare Local.xcconfig (not committed; required by XcodeGen project)
         run: cp apps/watch-ios/Local.xcconfig.example apps/watch-ios/Local.xcconfig
-
-      # Embedded watch app: actool needs a watchsimulator runtime matching the SDK.
-      - name: Download watchOS platform (simulator runtime for asset catalogs)
-        run: xcodebuild -downloadPlatform watchOS
 
       - name: Import signing certificate
         if: ${{ secrets.APPLE_DIST_CERT_P12 != '' }}
