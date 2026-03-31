@@ -19,7 +19,7 @@ struct TrackballRemoteView: View {
     @State private var packetBuilder = DebugTBPPacket()
     @State private var sendToDesktop = false
     @State private var showAdvancedTuning = false
-    @State private var localTrackballFriction = 0.96
+    @State private var localTrackballFriction = 0.850
     @State private var virtualTrackballScale = 1.0
     @State private var lastGesture = "None"
     @State private var visibleFingerLocation: CGPoint?
@@ -161,7 +161,7 @@ struct TrackballRemoteView: View {
                         .foregroundStyle(.white.opacity(0.66))
                 }
 
-                sliderRow("Local Friction", value: $localTrackballFriction, range: 0.85...0.995)
+                sliderRow("Local Friction", value: $localTrackballFriction, range: 0.550...0.995)
 
                 Button("Reset Trackball State") {
                     engine.resetInteractionState()
