@@ -11,7 +11,6 @@ struct TrackballRemoteView: View {
     @State private var sendToDesktop = false
     @State private var showAdvancedTuning = false
     @State private var localTrackballFriction = 0.96
-    @State private var deferTouchEndUntilCoastStops = false
     @State private var lastGesture = "None"
     @State private var visibleFingerLocation: CGPoint?
     @State private var currentTrackballDiameter: CGFloat = 300
@@ -73,13 +72,17 @@ struct TrackballRemoteView: View {
             }
         }
         .onReceive(tick) { now in
-            let delta = engine.tickPhysics(
+            let feedback = relay.coastingState
+            _ = engine.tickPhysics(
                 now: now,
                 ballDiameter: currentTrackballDiameter,
-                friction: localTrackballFriction
+                friction: localTrackballFriction,
+                coastingFeedback: TrackballCoastingFeedback(
+                    active: feedback.active,
+                    vx: feedback.vx,
+                    vy: feedback.vy
+                )
             )
-            streamRollingTouchToDesktopIfNeeded(delta: delta)
-            streamDesktopCoastingIfNeeded(delta: delta)
         }
     }
 
@@ -283,27 +286,24 @@ struct TrackballRemoteView: View {
             location: value.location,
             sphereDiameter: diameter
         )
-        sendRelease(events)
+        send(events)
     }
 
     private func handleTapGesture() {
         tapFeedback.impactOccurred(intensity: 0.7)
         lastGesture = "Tap"
-        deferTouchEndUntilCoastStops = false
         sendGesture(.tap)
     }
 
     private func handleDoubleTapGesture() {
         doubleTapFeedback.impactOccurred(intensity: 0.9)
         lastGesture = "Double Tap"
-        deferTouchEndUntilCoastStops = false
         sendGesture(.doubleTap)
     }
 
     private func handleLongPressGesture() {
         impactFeedback.impactOccurred(intensity: 0.85)
         lastGesture = "Long Press"
-        deferTouchEndUntilCoastStops = false
         sendGesture(.longPress)
     }
 
@@ -321,58 +321,6 @@ struct TrackballRemoteView: View {
                 impactFeedback.impactOccurred(intensity: 0.7)
                 lastGesture = "Fling"
                 sendFling(vx: vx, vy: vy)
-            }
-        }
-    }
-
-    private func sendRelease(_ events: [TrackballEngineEvent]) {
-        let shouldDeferTouchEnd = sendToDesktop && engine.isCoasting
-
-        for event in events {
-            switch event {
-            case let .touch(phase, x, y, pressure):
-                if phase == .ended && shouldDeferTouchEnd {
-                    deferTouchEndUntilCoastStops = true
-                    if !deferTouchEndUntilCoastStops {
-                        sendTouch(phase: phase, x: x, y: y, pressure: pressure)
-                    }
-                } else {
-                    sendTouch(phase: phase, x: x, y: y, pressure: pressure)
-                }
-            case .tap, .doubleTap, .longPress:
-                break
-            case let .fling(vx, vy):
-                impactFeedback.impactOccurred(intensity: 0.7)
-                lastGesture = "Fling"
-                if !shouldDeferTouchEnd {
-                    sendFling(vx: vx, vy: vy)
-                }
-            }
-        }
-    }
-
-    private func streamRollingTouchToDesktopIfNeeded(delta: CGPoint) {
-        guard sendToDesktop else { return }
-        guard engine.isDragging, hypot(delta.x, delta.y) > 1e-5 else { return }
-        if case let .touch(phase, x, y, pressure) = engine.currentTouchEvent(phase: .moved) {
-            ensureDesktopRelayReady()
-            relay.relay(packetBuilder.touch(phase: companionTouchPhase(phase), x: x, y: y, pressure: pressure))
-        }
-    }
-
-    private func streamDesktopCoastingIfNeeded(delta: CGPoint) {
-        guard sendToDesktop, deferTouchEndUntilCoastStops else { return }
-
-        if delta != .zero {
-            if case let .touch(phase, x, y, pressure) = engine.currentTouchEvent(phase: .moved) {
-                sendTouch(phase: phase, x: x, y: y, pressure: pressure)
-            }
-        }
-
-        if !engine.isCoasting {
-            deferTouchEndUntilCoastStops = false
-            if case let .touch(phase, x, y, pressure) = engine.currentTouchEvent(phase: .ended) {
-                sendTouch(phase: phase, x: x, y: y, pressure: pressure)
             }
         }
     }

@@ -7,7 +7,6 @@ import Combine
 struct TrackballView: View {
     @EnvironmentObject var sessionManager: WatchSessionManager
     @StateObject private var engine = TrackballInteractionEngine()
-    @State private var deferTouchEndUntilCoastStops = false
 
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
@@ -31,36 +30,7 @@ struct TrackballView: View {
                         vy: feedback.vy
                     )
                 )
-
-                guard deferTouchEndUntilCoastStops else { return }
-
-                if delta != .zero,
-                   case let .touch(phase, x, y, pressure) = engine.currentTouchEvent(phase: .moved) {
-                    sessionManager.send(
-                        TBPPacket.touch(
-                            touchId: 0,
-                            phase: touchPhase(phase),
-                            x: x,
-                            y: y,
-                            pressure: pressure
-                        )
-                    )
-                }
-
-                if !engine.isCoasting {
-                    deferTouchEndUntilCoastStops = false
-                    if case let .touch(phase, x, y, pressure) = engine.currentTouchEvent(phase: .ended) {
-                        sessionManager.send(
-                            TBPPacket.touch(
-                                touchId: 0,
-                                phase: touchPhase(phase),
-                                x: x,
-                                y: y,
-                                pressure: pressure
-                            )
-                        )
-                    }
-                }
+                _ = delta
             }
         }
     }
@@ -127,7 +97,7 @@ struct TrackballView: View {
     }
 
     private func onDragEnded(_ value: DragGesture.Value, diameter: CGFloat) {
-        sendRelease(engine.handleDragEnded(location: value.location, sphereDiameter: diameter))
+        send(engine.handleDragEnded(location: value.location, sphereDiameter: diameter))
     }
 
     private func send(_ events: [TrackballEngineEvent]) {
@@ -158,46 +128,6 @@ struct TrackballView: View {
             case let .fling(vx, vy):
                 sessionManager.send(TBPPacket.gesture(type: .fling, fingers: 1, param1: vx, param2: vy))
                 WKInterfaceDevice.current().play(.directionUp)
-            }
-        }
-    }
-
-    private func sendRelease(_ events: [TrackballEngineEvent]) {
-        let shouldDeferTouchEnd = engine.isCoasting
-
-        for event in events {
-            switch event {
-            case let .touch(phase, x, y, pressure):
-                if phase == .ended && shouldDeferTouchEnd {
-                    deferTouchEndUntilCoastStops = true
-                } else {
-                    sessionManager.send(
-                        TBPPacket.touch(
-                            touchId: 0,
-                            phase: touchPhase(phase),
-                            x: x,
-                            y: y,
-                            pressure: pressure
-                        )
-                    )
-                }
-            case .tap:
-                sessionManager.send(TBPPacket.gesture(type: .tap, fingers: 1, param1: 0, param2: 0))
-                WKInterfaceDevice.current().play(.click)
-                deferTouchEndUntilCoastStops = false
-            case .doubleTap:
-                sessionManager.send(TBPPacket.gesture(type: .doubleTap, fingers: 1, param1: 0, param2: 0))
-                WKInterfaceDevice.current().play(.success)
-                deferTouchEndUntilCoastStops = false
-            case .longPress:
-                sessionManager.send(TBPPacket.gesture(type: .longPress, fingers: 1, param1: 0, param2: 0))
-                WKInterfaceDevice.current().play(.failure)
-                deferTouchEndUntilCoastStops = false
-            case let .fling(vx, vy):
-                if !shouldDeferTouchEnd {
-                    sessionManager.send(TBPPacket.gesture(type: .fling, fingers: 1, param1: vx, param2: vy))
-                    WKInterfaceDevice.current().play(.directionUp)
-                }
             }
         }
     }

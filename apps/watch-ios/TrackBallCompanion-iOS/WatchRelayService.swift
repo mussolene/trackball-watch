@@ -29,6 +29,7 @@ final class WatchRelayService: NSObject, ObservableObject {
     @Published var isRunning = false
     @Published var packetsRelayed: Int = 0
     @Published var desktopLinkState: DesktopLinkState = .idle
+    @Published var coastingState: (vx: Double, vy: Double, active: Bool) = (0, 0, false)
 
     private var wcSession: WCSession?
     private var udpRelay: UDPRelay?
@@ -83,6 +84,7 @@ final class WatchRelayService: NSObject, ObservableObject {
         wcSession?.delegate = nil
         udpRelay?.cancel()
         udpRelay = nil
+        coastingState = (0, 0, false)
         bonjourBrowser?.stop()
         bonjourBrowser = nil
         cancellables.removeAll()
@@ -154,6 +156,7 @@ final class WatchRelayService: NSObject, ObservableObject {
             self?.pushModeToWatch(modeByte, handByte, frictionCenti: frictionByte)
         }
         relay.onStateFeedback = { [weak self] isCoasting, vx, vy in
+            self?.coastingState = (vx, vy, isCoasting)
             self?.pushStateFeedbackToWatch(isCoasting: isCoasting, vx: vx, vy: vy)
         }
         relay.onStateChanged = { [weak self] state in
