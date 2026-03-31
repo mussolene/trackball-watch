@@ -20,7 +20,7 @@ struct TrackballView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             .onReceive(tick) { now in
                 let feedback = sessionManager.coastingState
-                _ = engine.tickPhysics(
+                let delta = engine.tickPhysics(
                     now: now,
                     ballDiameter: d,
                     friction: sessionManager.trackballFriction,
@@ -30,6 +30,19 @@ struct TrackballView: View {
                         vy: feedback.vy
                     )
                 )
+                // Rolling displacement is integrated in tickPhysics while dragging; emit TOUCH moved here.
+                if engine.isDragging, hypot(delta.x, delta.y) > 1e-5,
+                   case let .touch(phase, x, y, pressure) = engine.currentTouchEvent(phase: .moved) {
+                    sessionManager.send(
+                        TBPPacket.touch(
+                            touchId: 0,
+                            phase: touchPhase(phase),
+                            x: x,
+                            y: y,
+                            pressure: pressure
+                        )
+                    )
+                }
             }
         }
     }
@@ -84,11 +97,19 @@ struct TrackballView: View {
     }
 
     private func onDragChanged(_ value: DragGesture.Value, diameter: CGFloat) {
-        send(engine.handleDragChanged(location: value.location, diameter: diameter))
+        let outer = diameter * 1.34
+        let center = CGPoint(x: outer / 2, y: outer / 2)
+        send(
+            engine.handleDragChanged(
+                location: value.location,
+                sphereCenter: center,
+                sphereDiameter: diameter
+            )
+        )
     }
 
     private func onDragEnded(_ value: DragGesture.Value, diameter: CGFloat) {
-        send(engine.handleDragEnded(location: value.location, diameter: diameter))
+        send(engine.handleDragEnded(location: value.location, sphereDiameter: diameter))
     }
 
     private func send(_ events: [TrackballEngineEvent]) {

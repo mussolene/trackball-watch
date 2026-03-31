@@ -9,11 +9,12 @@ struct TrackballRemoteView: View {
     @StateObject private var engine = TrackballInteractionEngine()
     @State private var packetBuilder = DebugTBPPacket()
     @State private var sendToDesktop = false
-    @State private var rotateSurface = false
     @State private var showAdvancedTuning = false
     @State private var localTrackballFriction = 0.96
     @State private var deferTouchEndUntilCoastStops = false
     @State private var lastGesture = "None"
+    @State private var physicalDeviceOrientation: UIDeviceOrientation = .portrait
+    @State private var visibleFingerLocation: CGPoint?
 
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -25,7 +26,8 @@ struct TrackballRemoteView: View {
             VStack(spacing: 20) {
                 TrackballRemoteSurface(
                     engine: engine,
-                    rotateSurface: rotateSurface,
+                    surfaceRotation: surfaceRotation,
+                    fingerLocation: visibleFingerLocation,
                     onChanged: onDragChanged,
                     onEnded: onDragEnded
                 )
@@ -49,15 +51,23 @@ struct TrackballRemoteView: View {
         .navigationTitle("Trackball Remote")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
+            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+            refreshPhysicalOrientation()
             impactFeedback.prepare()
             tapFeedback.prepare()
             doubleTapFeedback.prepare()
             ensureDesktopRelayReady()
         }
+        .onDisappear {
+            UIDevice.current.endGeneratingDeviceOrientationNotifications()
+        }
         .onChange(of: sendToDesktop) { _, enabled in
             if enabled {
                 ensureDesktopRelayReady()
             }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            refreshPhysicalOrientation()
         }
         .onReceive(tick) { now in
             let delta = engine.tickPhysics(
@@ -65,6 +75,7 @@ struct TrackballRemoteView: View {
                 ballDiameter: 300,
                 friction: localTrackballFriction
             )
+            streamRollingTouchToDesktopIfNeeded(delta: delta)
             streamDesktopCoastingIfNeeded(delta: delta)
         }
     }
@@ -74,10 +85,7 @@ struct TrackballRemoteView: View {
             Toggle("Send To Desktop Host", isOn: $sendToDesktop)
                 .tint(.white)
                 .foregroundStyle(.white)
-
-            Toggle("Rotate Surface 180°", isOn: $rotateSurface)
-                .tint(.white)
-                .foregroundStyle(.white)
+            statRow("Surface Orientation", value: physicalOrientationLabel)
 
             Text(desktopRelayStatus)
                 .font(.caption)
@@ -208,17 +216,23 @@ struct TrackballRemoteView: View {
     }
 
     private func onDragChanged(_ value: DragGesture.Value, diameter: CGFloat) {
+        visibleFingerLocation = value.location
+        let location = transformedLocation(value.location, diameter: diameter)
+        let center = CGPoint(x: diameter / 2, y: diameter / 2)
         let events = engine.handleDragChanged(
-            location: value.location,
-            diameter: diameter
+            location: location,
+            sphereCenter: center,
+            sphereDiameter: diameter
         )
         send(events)
     }
 
     private func onDragEnded(_ value: DragGesture.Value, diameter: CGFloat) {
+        visibleFingerLocation = nil
+        let location = transformedLocation(value.location, diameter: diameter)
         let events = engine.handleDragEnded(
-            location: value.location,
-            diameter: diameter
+            location: location,
+            sphereDiameter: diameter
         )
         sendRelease(events)
     }
@@ -293,6 +307,15 @@ struct TrackballRemoteView: View {
         }
     }
 
+    private func streamRollingTouchToDesktopIfNeeded(delta: CGPoint) {
+        guard sendToDesktop else { return }
+        guard engine.isDragging, hypot(delta.x, delta.y) > 1e-5 else { return }
+        if case let .touch(phase, x, y, pressure) = engine.currentTouchEvent(phase: .moved) {
+            ensureDesktopRelayReady()
+            relay.relay(packetBuilder.touch(phase: companionTouchPhase(phase), x: x, y: y, pressure: pressure))
+        }
+    }
+
     private func streamDesktopCoastingIfNeeded(delta: CGPoint) {
         guard sendToDesktop, deferTouchEndUntilCoastStops else { return }
 
@@ -340,12 +363,62 @@ struct TrackballRemoteView: View {
             return .cancelled
         }
     }
+
+    private var surfaceRotation: Angle {
+        switch physicalDeviceOrientation {
+        case .portraitUpsideDown:
+            return .degrees(180)
+        case .landscapeLeft:
+            return .degrees(90)
+        case .landscapeRight:
+            return .degrees(-90)
+        default:
+            return .degrees(0)
+        }
+    }
+
+    private var physicalOrientationLabel: String {
+        switch physicalDeviceOrientation {
+        case .portraitUpsideDown:
+            return "Upside Down"
+        case .landscapeLeft:
+            return "Landscape Left"
+        case .landscapeRight:
+            return "Landscape Right"
+        default:
+            return "Portrait"
+        }
+    }
+
+    private func refreshPhysicalOrientation() {
+        let current = UIDevice.current.orientation
+        switch current {
+        case .portrait, .portraitUpsideDown, .landscapeLeft, .landscapeRight:
+            physicalDeviceOrientation = current
+        default:
+            break
+        }
+    }
+
+    private func transformedLocation(_ location: CGPoint, diameter: CGFloat) -> CGPoint {
+        let center = CGPoint(x: diameter / 2, y: diameter / 2)
+        let dx = location.x - center.x
+        let dy = location.y - center.y
+        let radians = surfaceRotation.radians
+        let cosAngle = cos(radians)
+        let sinAngle = sin(radians)
+        return CGPoint(
+            x: center.x + dx * cosAngle - dy * sinAngle,
+            y: center.y + dx * sinAngle + dy * cosAngle
+        )
+    }
 }
 
 private struct TrackballRemoteSurface: View {
     @ObservedObject var engine: TrackballInteractionEngine
 
-    let rotateSurface: Bool
+    let surfaceRotation: Angle
+    let fingerLocation: CGPoint?
     let onChanged: (DragGesture.Value, CGFloat) -> Void
     let onEnded: (DragGesture.Value, CGFloat) -> Void
 
@@ -376,11 +449,12 @@ private struct TrackballRemoteSurface: View {
 
                         TrackballGlobeView(
                             orientation: engine.orientation,
-                            diameter: diameter
+                            diameter: diameter,
+                            fingerLocation: fingerLocation
                         )
                     }
                     .frame(width: diameter, height: diameter)
-                    .rotationEffect(.degrees(rotateSurface ? 180 : 0))
+                    .rotationEffect(surfaceRotation)
                     .contentShape(Circle())
                     .gesture(
                         DragGesture(minimumDistance: 0, coordinateSpace: .local)
@@ -400,6 +474,7 @@ private struct TrackballRemoteSurface: View {
 private struct TrackballGlobeView: View {
     let orientation: simd_quatd
     let diameter: CGFloat
+    let fingerLocation: CGPoint?
 
     var body: some View {
         Canvas { context, size in
@@ -459,6 +534,29 @@ private struct TrackballGlobeView: View {
                     color: Color.white.opacity(0.26),
                     lineWidth: max(0.75, diameter * 0.004),
                     closed: true
+                )
+            }
+
+            if let fingerLocation, hypot(fingerLocation.x - center.x, fingerLocation.y - center.y) <= radius {
+                let markerRect = CGRect(
+                    x: fingerLocation.x - 11,
+                    y: fingerLocation.y - 11,
+                    width: 22,
+                    height: 22
+                )
+                context.stroke(
+                    Path(ellipseIn: markerRect),
+                    with: .color(.white.opacity(0.92)),
+                    lineWidth: 2
+                )
+                context.fill(
+                    Path(ellipseIn: CGRect(
+                        x: fingerLocation.x - 3,
+                        y: fingerLocation.y - 3,
+                        width: 6,
+                        height: 6
+                    )),
+                    with: .color(.white.opacity(0.92))
                 )
             }
         }

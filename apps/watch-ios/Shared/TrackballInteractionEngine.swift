@@ -28,6 +28,7 @@ final class TrackballInteractionEngine: ObservableObject {
     @Published private(set) var isDragging = false
     @Published private(set) var orientation: simd_quatd = simd_quatd(ix: 0, iy: 0, iz: 0, r: 1)
     @Published private(set) var angularVelocity: SIMD3<Double> = .zero
+    /// Contact point of the ball on the infinite virtual plane (screen analog); drives TBP x/y.
     @Published private(set) var virtualContactPoint: CGPoint = .zero
     @Published private(set) var pressureByte: UInt8 = 180
 
@@ -35,6 +36,9 @@ final class TrackballInteractionEngine: ObservableObject {
     private var dragStart: CGPoint = .zero
     private var dragStartTime: Date = .distantPast
     private var lastDragPoint: CGPoint = .zero
+    /// Last time a drag sample passed the noise gate and updated ω (rolling).
+    private var lastRollingDragEventTime: Date = .distantPast
+    private var lastOmegaSampleTime: Date = .distantPast
     private var lastTick: Date = .now
     private var lastTapAt: Date = .distantPast
     private let virtualContactPacketScale: CGFloat = 32.0
@@ -59,18 +63,25 @@ final class TrackballInteractionEngine: ObservableObject {
         stoppedCoastByTouch = false
         lastDragPoint = .zero
         dragStart = .zero
+        lastRollingDragEventTime = .distantPast
+        lastOmegaSampleTime = .distantPast
     }
 
     var isCoasting: Bool {
         !isDragging && simd_length(angularVelocity) > 0.01
     }
 
+    /// Pure rolling on a plane:
+    /// the ball is visually stationary on screen while its contact point on the virtual screen-plane moves.
+    /// The sphere orientation is advanced by the corresponding no-slip rolling rotation.
     func handleDragChanged(
         location: CGPoint,
-        diameter: CGFloat
+        sphereCenter: CGPoint,
+        sphereDiameter: CGFloat
     ) -> [TrackballEngineEvent] {
         let now = Date()
         let point = location
+        let radius = Double(sphereDiameter / 2)
 
         if !isDragging {
             stoppedCoastByTouch = isCoasting
@@ -80,8 +91,10 @@ final class TrackballInteractionEngine: ObservableObject {
             lastDragPoint = point
             angularVelocity = .zero
             pressureByte = 180
-            // New contact: baseline for both host deltas and packet coords (avoids cursor jumps).
             virtualContactPoint = .zero
+            lastTick = now
+            lastOmegaSampleTime = now
+            _ = sphereCenter
             return [touchEvent(.began)]
         }
 
@@ -93,31 +106,35 @@ final class TrackballInteractionEngine: ObservableObject {
         }
 
         lastDragPoint = point
+        lastRollingDragEventTime = now
 
-        applyDragRotation(dx: dx, dy: dy, diameter: diameter, location: point)
-        virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + dx)
-        virtualContactPoint.y = clampVirtualAxis(virtualContactPoint.y + dy)
+        let dt = max(1e-4, min(0.25, now.timeIntervalSince(lastOmegaSampleTime)))
+        lastOmegaSampleTime = now
+        angularVelocity = angularVelocityFromPlaneDisplacement(dx: Double(dx), dy: Double(dy), radius: radius, dt: dt)
+
+        let stepRotation = rotationFromPlaneDisplacement(dx: Double(dx), dy: Double(dy), radius: radius)
+        orientation = simd_normalize(stepRotation * orientation)
 
         let speed = hypot(dx, dy)
         pressureByte = UInt8(clamping: Int(min(255.0, max(1.0, 24.0 + speed * 5.5))))
-        return [touchEvent(.moved)]
+        return []
     }
 
     func handleDragEnded(
         location: CGPoint,
-        diameter: CGFloat
+        sphereDiameter: CGFloat
     ) -> [TrackballEngineEvent] {
         defer { isDragging = false }
 
         let point = location
-        let tapDistanceThreshold = max(tapMaxDistance, diameter * 0.08)
+        let tapDistanceThreshold = max(tapMaxDistance, sphereDiameter * 0.08)
         let distance = hypot(point.x - dragStart.x, point.y - dragStart.y)
         let duration = Date().timeIntervalSince(dragStartTime)
 
         if stoppedCoastByTouch {
             stoppedCoastByTouch = false
             // Touch-down while coasting stopped inertia; short lift-off can still be a click.
-            let tapDistanceThreshold = max(tapMaxDistance, diameter * 0.08)
+            let tapDistanceThreshold = max(tapMaxDistance, sphereDiameter * 0.08)
             let distance = hypot(point.x - dragStart.x, point.y - dragStart.y)
             let duration = Date().timeIntervalSince(dragStartTime)
             if distance < tapDistanceThreshold && duration < tapMaxDuration {
@@ -135,10 +152,11 @@ final class TrackballInteractionEngine: ObservableObject {
             return tapEvents() + [touchEvent(.ended)]
         }
 
-        let radius = Double(diameter / 2.0)
+        let radius = Double(sphereDiameter / 2.0)
         if radius > 0 {
-            let linearVX = CGFloat(angularVelocity.y * radius / 60.0)
-            let linearVY = CGFloat(angularVelocity.x * radius / 60.0)
+            // Plane velocity from rolling in UIKit coordinates: v_x = ω_y R, v_y = ω_x R.
+            let linearVX = CGFloat(angularVelocity.y * radius)
+            let linearVY = CGFloat(angularVelocity.x * radius)
             if hypot(linearVX, linearVY) > 0.12 {
                 return [touchEvent(.ended), flingEvent(vx: linearVX, vy: linearVY)]
             }
@@ -158,14 +176,31 @@ final class TrackballInteractionEngine: ObservableObject {
     ) -> CGPoint {
         let dt = max(0.001, min(0.05, now.timeIntervalSince(lastTick)))
         lastTick = now
-        guard !isDragging else { return .zero }
+
+        // Finger down: ball rolls on virtual plane (screen); contact point = cursor analog.
+        // In UIKit coordinates (x right, y down), the screen-plane velocity is (ω_y R, ω_x R).
+        if isDragging {
+            if now.timeIntervalSince(lastRollingDragEventTime) > 0.08 {
+                angularVelocity = .zero
+                return .zero
+            }
+            let speed = simd_length(angularVelocity)
+            guard speed > 0.01 else {
+                return .zero
+            }
+            let radius = Double(ballDiameter / 2.0)
+            let delta = planeDisplacementFromOmega(angularVelocity, radius: radius, dt: dt)
+            virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + delta.x)
+            virtualContactPoint.y = clampVirtualAxis(virtualContactPoint.y + delta.y)
+            return delta
+        }
 
         if let feedback = coastingFeedback, feedback.active {
             let radius = Double(ballDiameter / 2.0)
             if radius > 0 {
                 let target = SIMD3<Double>(
-                    feedback.vy / radius * 60.0,
-                    feedback.vx / radius * 60.0,
+                    feedback.vy / radius,
+                    feedback.vx / radius,
                     0
                 )
                 angularVelocity = angularVelocity * 0.7 + target * 0.3
@@ -179,10 +214,7 @@ final class TrackballInteractionEngine: ObservableObject {
         }
 
         let radius = Double(ballDiameter / 2.0)
-        let delta = CGPoint(
-            x: CGFloat(angularVelocity.y * radius * dt),
-            y: CGFloat(angularVelocity.x * radius * dt)
-        )
+        let delta = planeDisplacementFromOmega(angularVelocity, radius: radius, dt: dt)
         virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + delta.x)
         virtualContactPoint.y = clampVirtualAxis(virtualContactPoint.y + delta.y)
 
@@ -261,19 +293,35 @@ final class TrackballInteractionEngine: ObservableObject {
         return max(min(value, maxVirtualContact), -maxVirtualContact)
     }
 
-    private func applyDragRotation(dx: CGFloat, dy: CGFloat, diameter: CGFloat, location: CGPoint) {
-        let radius = Double(diameter / 2.0)
-        guard radius > 0 else { return }
+    /// No-slip rolling on the virtual screen-plane in UIKit coordinates:
+    /// screen displacement `(dx, dy)` maps to angular velocity `(ωx, ωy, 0)`
+    /// where `v = (ωy R, ωx R)`.
+    private func angularVelocityFromPlaneDisplacement(dx: Double, dy: Double, radius: Double, dt: Double) -> SIMD3<Double> {
+        guard radius > 1e-6, dt > 1e-6 else { return .zero }
+        return SIMD3<Double>(
+            dy / (radius * dt),
+            dx / (radius * dt),
+            0
+        )
+    }
 
-        let omegaX = Double(dy) / radius
-        let omegaY = Double(dx) / radius
-        let _ = location
-        let omega = SIMD3<Double>(omegaX, omegaY, 0)
-        let angle = simd_length(omega)
-        guard angle > 1e-6 else { return }
+    private func rotationFromPlaneDisplacement(dx: Double, dy: Double, radius: Double) -> simd_quatd {
+        guard radius > 1e-6 else {
+            return simd_quatd(ix: 0, iy: 0, iz: 0, r: 1)
+        }
+        let angle = hypot(dx, dy) / radius
+        guard angle > 1e-9 else {
+            return simd_quatd(ix: 0, iy: 0, iz: 0, r: 1)
+        }
+        let axis = simd_normalize(SIMD3<Double>(dy, dx, 0))
+        return simd_quatd(angle: angle, axis: axis)
+    }
 
-        let deltaRotation = simd_quatd(angle: angle, axis: omega / angle)
-        orientation = (deltaRotation * orientation).normalized
-        angularVelocity = omega * 60.0
+    /// Rolling on the virtual screen-plane: d(contact)/dt = (ω_y R, ω_x R) in UIKit.
+    private func planeDisplacementFromOmega(_ omega: SIMD3<Double>, radius: Double, dt: Double) -> CGPoint {
+        CGPoint(
+            x: CGFloat(omega.y * radius * dt),
+            y: CGFloat(omega.x * radius * dt)
+        )
     }
 }
