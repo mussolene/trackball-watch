@@ -10,9 +10,11 @@
  * When HEAD is N commits after tag vA.B.C, version becomes A.B.C-dev.N (Cargo-safe semver).
  *
  * Skip with SKIP_SYNC_VERSION=1 (e.g. local builds when you do not want file churn).
+ * Skip cargo check with SKIP_CARGO_CHECK=1 if needed; otherwise a stub `dist/index.html`
+ * is created when missing so `cargo check` works without a Vite build (e.g. CI).
  */
 import { execSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -83,6 +85,20 @@ function writeJson(path, mutator) {
   writeFileSync(path, JSON.stringify(j, null, 2) + "\n");
 }
 
+/** Tauri `generate_context!` requires `build.frontendDist` to exist at compile time; CI has no Vite build. */
+function ensureFrontendDistStubForCargoCheck(hostDir) {
+  const indexPath = join(hostDir, "dist", "index.html");
+  if (existsSync(indexPath)) {
+    return;
+  }
+  mkdirSync(join(hostDir, "dist"), { recursive: true });
+  writeFileSync(
+    indexPath,
+    "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body></body></html>\n"
+  );
+  console.log("sync-version: wrote stub dist/index.html so cargo check can run (no Vite build in tree)");
+}
+
 function main() {
   if (process.env.SKIP_SYNC_VERSION === "1") {
     console.log("sync-version: skipped (SKIP_SYNC_VERSION=1)");
@@ -109,6 +125,12 @@ function main() {
     }
   });
 
+  if (process.env.SKIP_CARGO_CHECK === "1") {
+    console.log("sync-version: skipped cargo check (SKIP_CARGO_CHECK=1)");
+    return;
+  }
+
+  ensureFrontendDistStubForCargoCheck(hostDir);
   run("cargo check -q", { cwd: coreDir });
 }
 
