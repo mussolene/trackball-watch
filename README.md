@@ -93,6 +93,22 @@ Apple Watch 7
 
 ---
 
+## Screenshots
+
+Desktop host (macOS) — relay status and input tuning (Settings tab).
+
+![Desktop host: Settings and relay status](docs/screenshots/desktop-host-settings.png)
+
+iPhone companion — saved desktops, Bonjour discovery, and manual pairing.
+
+![iPhone companion: connection and nearby desktops](docs/screenshots/iphone-pairing.png)
+
+Trackball Remote — on-device trackball surface with relay and telemetry (advanced tuning available).
+
+![iPhone: Trackball Remote](docs/screenshots/iphone-trackball-remote.png)
+
+---
+
 ## Requirements
 
 | Component | Minimum |
