@@ -41,7 +41,7 @@ final class TrackballInteractionEngine: ObservableObject {
     private var lastOmegaSampleTime: Date = .distantPast
     private var lastTick: Date = .now
     private var lastTapAt: Date = .distantPast
-    private let virtualContactPacketScale: CGFloat = 32.0
+    private let virtualContactPacketScale: CGFloat = 96.0
 
     /// Keep `x * virtualContactPacketScale` within Int16 range for TBP payloads.
     private var maxVirtualContact: CGFloat {
@@ -54,7 +54,7 @@ final class TrackballInteractionEngine: ObservableObject {
     private let longPressMinDuration: TimeInterval = 0.48
     /// Sub-point noise; `lastDragPoint` is only advanced when movement meets this (avoids host desync).
     private let dragNoiseThreshold: CGFloat = 0.22
-    private let cursorMotionGain: Double = 1.8
+    private let cursorMotionGain: Double = 2.4
     private let dragAngularVelocityBlend: Double = 0.35
 
     func resetInteractionState() {
