@@ -459,12 +459,11 @@ private struct TrackballRemoteSurface: View {
                 min((geo.size.width - 24) / haloScale, (geo.size.height - 24) / haloScale, 420)
             )
             let outerDiameter = diameter * haloScale
-            // DragGesture reports locations in the full panel (geo); the globe Canvas is a centered
-            // `diameter` square — convert so the finger marker aligns with the visible sphere.
+            // DragGesture is on the inner `outerDiameter` ZStack, so `value.location` is in that
+            // square's local space — not the full `geo`. The globe Canvas is centered inside it.
+            let globeInset = (outerDiameter - diameter) / 2
             let fingerInGlobeCanvas: CGPoint? = fingerLocation.map { loc in
-                let ox = (geo.size.width - diameter) / 2
-                let oy = (geo.size.height - diameter) / 2
-                return CGPoint(x: loc.x - ox, y: loc.y - oy)
+                CGPoint(x: loc.x - globeInset, y: loc.y - globeInset)
             }
             ZStack {
                 RoundedRectangle(cornerRadius: 28)
@@ -521,7 +520,7 @@ private struct TrackballRemoteSurface: View {
                     DragGesture(minimumDistance: 0, coordinateSpace: .local)
                         .onChanged { value in
                             if !engine.isDragging,
-                               !isInsideTrackball(value.location, diameter: diameter, panelSize: geo.size) {
+                               !isInsideTrackball(value.location, diameter: diameter, outerDiameter: outerDiameter) {
                                 return
                             }
                             onChanged(value, diameter)
@@ -564,10 +563,10 @@ private struct TrackballRemoteSurface: View {
         }
     }
 
-    /// `location` is in the same space as `panelSize` (the `GeometryReader` that owns the drag gesture).
-    private func isInsideTrackball(_ location: CGPoint, diameter: CGFloat, panelSize: CGSize) -> Bool {
+    /// `location` is in the drag view's local space (the `outerDiameter` ZStack that owns the gesture).
+    private func isInsideTrackball(_ location: CGPoint, diameter: CGFloat, outerDiameter: CGFloat) -> Bool {
         let radius = diameter * 0.5
-        let center = CGPoint(x: panelSize.width * 0.5, y: panelSize.height * 0.5)
+        let center = CGPoint(x: outerDiameter * 0.5, y: outerDiameter * 0.5)
         return hypot(location.x - center.x, location.y - center.y) <= radius
     }
 }
