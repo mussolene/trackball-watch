@@ -26,6 +26,9 @@ jobs:
         with:
           workspaces: apps/host-desktop/src-tauri
 
+      - name: Sync desktop version from git tag
+        run: node scripts/sync-version-from-git.mjs
+
       - name: Install Node.js
         uses: actions/setup-node@v4
         with:
@@ -88,6 +91,9 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: apps/host-desktop/src-tauri
+
+      - name: Sync desktop version from git tag
+        run: node scripts/sync-version-from-git.mjs
 
       - name: Install Node.js
         uses: actions/setup-node@v4

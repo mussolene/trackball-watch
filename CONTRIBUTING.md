@@ -22,6 +22,14 @@ This repository is an active product-in-development. Contributions are welcome, 
 - Prefer focused changes over broad refactors unless the refactor clearly reduces risk.
 - Add or update tests when changing input behavior or protocol logic.
 
+## Versioning (desktop host)
+
+Desktop bundle versions follow **annotated semver tags** `vMAJOR.MINOR.PATCH` (for example `v1.0.1`).
+
+- `npm run tauri:build` in `apps/host-desktop` runs `scripts/sync-version-from-git.mjs`, which updates `Cargo.toml`, `tauri.conf.json`, `package.json`, and `package-lock.json` from `git describe` (or from `GITHUB_REF` on tag builds in CI).
+- If you do not want those files to change locally, set `SKIP_SYNC_VERSION=1` for that command.
+- Release builds on GitHub Actions run the same sync step before `npm ci` so artifacts match the pushed tag.
+
 ## For Input Changes
 
 When changing pointer behavior, include:

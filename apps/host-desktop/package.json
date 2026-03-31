@@ -8,8 +8,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "npx tauri",
+    "sync-version": "node ../../scripts/sync-version-from-git.mjs",
     "tauri:dev": "npx tauri dev",
-    "tauri:build": "npx tauri build && bash src-tauri/macos-resign-bundle.sh"
+    "tauri:build": "npm run sync-version && npx tauri build && bash src-tauri/macos-resign-bundle.sh"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",

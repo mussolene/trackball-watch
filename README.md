@@ -183,9 +183,11 @@ Open **Settings** from the system tray icon.
 ```bash
 cd apps/host-desktop
 npm install
-npm run tauri dev        # development
-npm run tauri build      # production
+npm run tauri:dev        # development
+npm run tauri:build      # production (syncs version from git, then bundles)
 ```
+
+Production builds set the app version from the latest `v*.*.*` git tag (see `scripts/sync-version-from-git.mjs`). To cut a release, create an annotated tag such as `v1.0.1` and push it; GitHub Actions uses the same logic.
 
 ### Build Watch + iPhone Apps
 
