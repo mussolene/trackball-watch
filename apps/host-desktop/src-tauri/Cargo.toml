@@ -1,6 +1,6 @@
 [package]
 name = "trackball-watch"
-version = "1.0.2"
+version = "1.0.3"
 description = "TrackBall Watch — Desktop Host"
 edition = "2021"
 rust-version = "1.75"

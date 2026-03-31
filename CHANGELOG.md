@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-03-31
+
+### Fixed
+
+- **Desktop / CI:** `sync-version-from-git.mjs` runs `cargo check` without a Vite build; ensure a stub `dist/index.html` on CI and align paths with `frontendDist`. On Windows runners, enable `windows` crate feature `Win32_UI_WindowsAndMessaging` for `GetSystemMetrics` in absolute mouse move.
+
 ## [1.0.2] - 2026-03-31
 
 ### Fixed
