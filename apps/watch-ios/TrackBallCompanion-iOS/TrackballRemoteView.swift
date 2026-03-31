@@ -295,16 +295,13 @@ struct TrackballRemoteView: View {
     }
 
     private func sendRelease(_ events: [TrackballEngineEvent]) {
-        let hasFling = events.contains { event in
-            if case .fling = event { return true }
-            return false
-        }
+        let shouldDeferTouchEnd = sendToDesktop && engine.isCoasting
 
         for event in events {
             switch event {
             case let .touch(phase, x, y, pressure):
-                if phase == .ended && hasFling {
-                    deferTouchEndUntilCoastStops = sendToDesktop && engine.isCoasting
+                if phase == .ended && shouldDeferTouchEnd {
+                    deferTouchEndUntilCoastStops = true
                     if !deferTouchEndUntilCoastStops {
                         sendTouch(phase: phase, x: x, y: y, pressure: pressure)
                     }
@@ -329,7 +326,7 @@ struct TrackballRemoteView: View {
             case let .fling(vx, vy):
                 impactFeedback.impactOccurred(intensity: 0.7)
                 lastGesture = "Fling"
-                if !deferTouchEndUntilCoastStops {
+                if !shouldDeferTouchEnd {
                     sendFling(vx: vx, vy: vy)
                 }
             }

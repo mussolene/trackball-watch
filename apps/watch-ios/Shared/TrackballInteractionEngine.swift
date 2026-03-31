@@ -54,6 +54,8 @@ final class TrackballInteractionEngine: ObservableObject {
     private let longPressMinDuration: TimeInterval = 0.48
     /// Sub-point noise; `lastDragPoint` is only advanced when movement meets this (avoids host desync).
     private let dragNoiseThreshold: CGFloat = 0.22
+    private let cursorMotionGain: Double = 1.35
+    private let dragAngularVelocityBlend: Double = 0.35
 
     func resetInteractionState() {
         isDragging = false
@@ -110,12 +112,23 @@ final class TrackballInteractionEngine: ObservableObject {
 
         let dt = max(1e-4, min(0.25, now.timeIntervalSince(lastOmegaSampleTime)))
         lastOmegaSampleTime = now
-        angularVelocity = angularVelocityFromPlaneDisplacement(dx: Double(dx), dy: Double(dy), radius: radius, dt: dt)
+        let measuredAngularVelocity = angularVelocityFromPlaneDisplacement(
+            dx: Double(dx),
+            dy: Double(dy),
+            radius: radius,
+            dt: dt
+        )
+        if simd_length(angularVelocity) > 1e-4 {
+            angularVelocity = angularVelocity * (1.0 - dragAngularVelocityBlend)
+                + measuredAngularVelocity * dragAngularVelocityBlend
+        } else {
+            angularVelocity = measuredAngularVelocity
+        }
 
         let stepRotation = rotationFromPlaneDisplacement(dx: Double(dx), dy: Double(dy), radius: radius)
         orientation = simd_normalize(stepRotation * orientation)
-        virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + dx)
-        virtualContactPoint.y = clampVirtualAxis(virtualContactPoint.y + dy)
+        virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + dx * cursorMotionGain)
+        virtualContactPoint.y = clampVirtualAxis(virtualContactPoint.y + dy * cursorMotionGain)
 
         let speed = hypot(dx, dy)
         pressureByte = UInt8(clamping: Int(min(255.0, max(1.0, 24.0 + speed * 5.5))))
@@ -157,8 +170,8 @@ final class TrackballInteractionEngine: ObservableObject {
         let radius = Double(sphereDiameter / 2.0)
         if radius > 0 {
             // Plane velocity from rolling in UIKit coordinates: v_x = ω_y R, v_y = ω_x R.
-            let linearVX = CGFloat(angularVelocity.y * radius)
-            let linearVY = CGFloat(angularVelocity.x * radius)
+            let linearVX = CGFloat(angularVelocity.y * radius * cursorMotionGain)
+            let linearVY = CGFloat(angularVelocity.x * radius * cursorMotionGain)
             if hypot(linearVX, linearVY) > 0.12 {
                 return [touchEvent(.ended), flingEvent(vx: linearVX, vy: linearVY)]
             }
@@ -192,8 +205,8 @@ final class TrackballInteractionEngine: ObservableObject {
             let radius = Double(ballDiameter / 2.0)
             if radius > 0 {
                 let target = SIMD3<Double>(
-                    feedback.vy / radius,
-                    feedback.vx / radius,
+                    feedback.vy / (radius * cursorMotionGain),
+                    feedback.vx / (radius * cursorMotionGain),
                     0
                 )
                 angularVelocity = angularVelocity * 0.7 + target * 0.3
@@ -313,8 +326,8 @@ final class TrackballInteractionEngine: ObservableObject {
     /// Rolling on the virtual screen-plane: d(contact)/dt = (ω_y R, ω_x R) in UIKit.
     private func planeDisplacementFromOmega(_ omega: SIMD3<Double>, radius: Double, dt: Double) -> CGPoint {
         CGPoint(
-            x: CGFloat(omega.y * radius * dt),
-            y: CGFloat(omega.x * radius * dt)
+            x: CGFloat(omega.y * radius * dt * cursorMotionGain),
+            y: CGFloat(omega.x * radius * dt * cursorMotionGain)
         )
     }
 }
