@@ -133,6 +133,9 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode_16.app
 
+      - name: Prepare Local.xcconfig (not committed; required by XcodeGen project)
+        run: cp apps/watch-ios/Local.xcconfig.example apps/watch-ios/Local.xcconfig
+
       - name: Build Apple watch target
         run: |
           xcodebuild build \
