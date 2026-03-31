@@ -12,7 +12,7 @@ pub struct TrackballState {
     pub vy: f64,
     /// Whether the user currently has finger contact and is steering the ball.
     pub touch_active: bool,
-    /// Friction coefficient (0.85–0.99). Applied each frame: v *= friction.
+    /// Per-frame coast friction at 60 Hz (CONFIG / UI: ~0.55–0.99; wire clamp 0.50–0.99).
     pub friction: f64,
     /// Higher damping while finger is down. Keeps steering controllable and prevents overshoot.
     pub touch_friction: f64,

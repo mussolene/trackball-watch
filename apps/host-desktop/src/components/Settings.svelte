@@ -74,7 +74,7 @@
     <h3>Trackball friction <span class="value">{Math.round(config.trackball_friction * 100)}%</span></h3>
     <input
       type="range"
-      min="0.85"
+      min="0.55"
       max="0.99"
       step="0.01"
       bind:value={config.trackball_friction}
