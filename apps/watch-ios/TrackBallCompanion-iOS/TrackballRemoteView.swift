@@ -13,8 +13,8 @@ struct TrackballRemoteView: View {
     @State private var localTrackballFriction = 0.96
     @State private var deferTouchEndUntilCoastStops = false
     @State private var lastGesture = "None"
-    @State private var physicalDeviceOrientation: UIDeviceOrientation = .portrait
     @State private var visibleFingerLocation: CGPoint?
+    @State private var currentTrackballDiameter: CGFloat = 300
 
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -22,20 +22,31 @@ struct TrackballRemoteView: View {
     private let doubleTapFeedback = UIImpactFeedbackGenerator(style: .medium)
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 20) {
-                TrackballRemoteSurface(
-                    engine: engine,
-                    surfaceRotation: surfaceRotation,
-                    fingerLocation: visibleFingerLocation,
-                    onChanged: onDragChanged,
-                    onEnded: onDragEnded
-                )
-                controlsPanel
-                tuningPanel
-                statsPanel
+        GeometryReader { geo in
+            let isLandscape = geo.size.width > geo.size.height
+
+            Group {
+                if isLandscape {
+                    HStack(alignment: .top, spacing: 20) {
+                        trackballPanel(containerSize: geo.size, isLandscape: true)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                        ScrollView {
+                            settingsPanel
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    }
+                } else {
+                    ScrollView {
+                        VStack(spacing: 20) {
+                            trackballPanel(containerSize: geo.size, isLandscape: false)
+                            settingsPanel
+                        }
+                        .padding(20)
+                    }
+                }
             }
-            .padding(20)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
         }
         .background(
             LinearGradient(
@@ -51,28 +62,20 @@ struct TrackballRemoteView: View {
         .navigationTitle("Trackball Remote")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
-            UIDevice.current.beginGeneratingDeviceOrientationNotifications()
-            refreshPhysicalOrientation()
             impactFeedback.prepare()
             tapFeedback.prepare()
             doubleTapFeedback.prepare()
             ensureDesktopRelayReady()
-        }
-        .onDisappear {
-            UIDevice.current.endGeneratingDeviceOrientationNotifications()
         }
         .onChange(of: sendToDesktop) { _, enabled in
             if enabled {
                 ensureDesktopRelayReady()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
-            refreshPhysicalOrientation()
-        }
         .onReceive(tick) { now in
             let delta = engine.tickPhysics(
                 now: now,
-                ballDiameter: 300,
+                ballDiameter: currentTrackballDiameter,
                 friction: localTrackballFriction
             )
             streamRollingTouchToDesktopIfNeeded(delta: delta)
@@ -80,12 +83,40 @@ struct TrackballRemoteView: View {
         }
     }
 
+    private func trackballPanel(containerSize: CGSize, isLandscape: Bool) -> some View {
+        let portraitHeight = min(max(260, containerSize.width - 40), containerSize.height * 0.52)
+        return TrackballRemoteSurface(
+            engine: engine,
+            fingerLocation: visibleFingerLocation,
+            onChanged: onDragChanged,
+            onEnded: onDragEnded,
+            onDiameterChanged: { diameter in
+                currentTrackballDiameter = diameter
+            }
+        )
+        .frame(
+            maxWidth: .infinity,
+            minHeight: isLandscape ? 260 : portraitHeight,
+            maxHeight: isLandscape ? .infinity : portraitHeight,
+            alignment: .top
+        )
+        .padding(20)
+    }
+
+    private var settingsPanel: some View {
+        VStack(spacing: 20) {
+            controlsPanel
+            tuningPanel
+            statsPanel
+        }
+        .padding(20)
+    }
+
     private var controlsPanel: some View {
         VStack(alignment: .leading, spacing: 14) {
             Toggle("Send To Desktop Host", isOn: $sendToDesktop)
                 .tint(.white)
                 .foregroundStyle(.white)
-            statRow("Surface Orientation", value: physicalOrientationLabel)
 
             Text(desktopRelayStatus)
                 .font(.caption)
@@ -217,10 +248,9 @@ struct TrackballRemoteView: View {
 
     private func onDragChanged(_ value: DragGesture.Value, diameter: CGFloat) {
         visibleFingerLocation = value.location
-        let location = transformedLocation(value.location, diameter: diameter)
         let center = CGPoint(x: diameter / 2, y: diameter / 2)
         let events = engine.handleDragChanged(
-            location: location,
+            location: value.location,
             sphereCenter: center,
             sphereDiameter: diameter
         )
@@ -229,9 +259,8 @@ struct TrackballRemoteView: View {
 
     private func onDragEnded(_ value: DragGesture.Value, diameter: CGFloat) {
         visibleFingerLocation = nil
-        let location = transformedLocation(value.location, diameter: diameter)
         let events = engine.handleDragEnded(
-            location: location,
+            location: value.location,
             sphereDiameter: diameter
         )
         sendRelease(events)
@@ -364,107 +393,57 @@ struct TrackballRemoteView: View {
         }
     }
 
-    private var surfaceRotation: Angle {
-        switch physicalDeviceOrientation {
-        case .portraitUpsideDown:
-            return .degrees(180)
-        case .landscapeLeft:
-            return .degrees(90)
-        case .landscapeRight:
-            return .degrees(-90)
-        default:
-            return .degrees(0)
-        }
-    }
-
-    private var physicalOrientationLabel: String {
-        switch physicalDeviceOrientation {
-        case .portraitUpsideDown:
-            return "Upside Down"
-        case .landscapeLeft:
-            return "Landscape Left"
-        case .landscapeRight:
-            return "Landscape Right"
-        default:
-            return "Portrait"
-        }
-    }
-
-    private func refreshPhysicalOrientation() {
-        let current = UIDevice.current.orientation
-        switch current {
-        case .portrait, .portraitUpsideDown, .landscapeLeft, .landscapeRight:
-            physicalDeviceOrientation = current
-        default:
-            break
-        }
-    }
-
-    private func transformedLocation(_ location: CGPoint, diameter: CGFloat) -> CGPoint {
-        let center = CGPoint(x: diameter / 2, y: diameter / 2)
-        let dx = location.x - center.x
-        let dy = location.y - center.y
-        let radians = surfaceRotation.radians
-        let cosAngle = cos(radians)
-        let sinAngle = sin(radians)
-        return CGPoint(
-            x: center.x + dx * cosAngle - dy * sinAngle,
-            y: center.y + dx * sinAngle + dy * cosAngle
-        )
-    }
 }
 
 private struct TrackballRemoteSurface: View {
     @ObservedObject var engine: TrackballInteractionEngine
 
-    let surfaceRotation: Angle
     let fingerLocation: CGPoint?
     let onChanged: (DragGesture.Value, CGFloat) -> Void
     let onEnded: (DragGesture.Value, CGFloat) -> Void
+    let onDiameterChanged: (CGFloat) -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Trackball")
-                .font(.headline)
-                .foregroundStyle(.white)
+        GeometryReader { geo in
+            let diameter = max(180, min(geo.size.width - 24, geo.size.height - 24, 420))
+            ZStack {
+                RoundedRectangle(cornerRadius: 28)
+                    .fill(Color.white.opacity(0.04))
 
-            GeometryReader { geo in
-                let diameter = min(geo.size.width, 300)
                 ZStack {
-                    RoundedRectangle(cornerRadius: 28)
-                        .fill(Color.white.opacity(0.04))
+                    Circle()
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                        .frame(width: diameter * 1.22, height: diameter * 1.22)
 
-                    ZStack {
-                        Circle()
-                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                            .frame(width: diameter * 1.22, height: diameter * 1.22)
+                    Circle()
+                        .stroke(Color.white.opacity(0.18),
+                                style: StrokeStyle(
+                                    lineWidth: max(5, diameter * 0.05),
+                                    lineCap: .round
+                                ))
+                        .frame(width: diameter * 1.08, height: diameter * 1.08)
 
-                        Circle()
-                            .stroke(Color.white.opacity(0.18),
-                                    style: StrokeStyle(
-                                        lineWidth: max(5, diameter * 0.05),
-                                        lineCap: .round
-                                    ))
-                            .frame(width: diameter * 1.08, height: diameter * 1.08)
-
-                        TrackballGlobeView(
-                            orientation: engine.orientation,
-                            diameter: diameter,
-                            fingerLocation: fingerLocation
-                        )
-                    }
-                    .frame(width: diameter, height: diameter)
-                    .rotationEffect(surfaceRotation)
-                    .contentShape(Circle())
-                    .gesture(
-                        DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                            .onChanged { value in onChanged(value, diameter) }
-                            .onEnded { value in onEnded(value, diameter) }
+                    TrackballGlobeView(
+                        orientation: engine.orientation,
+                        diameter: diameter,
+                        fingerLocation: fingerLocation
                     )
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(width: diameter, height: diameter)
+                .contentShape(Circle())
+                .gesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                        .onChanged { value in onChanged(value, diameter) }
+                        .onEnded { value in onEnded(value, diameter) }
+                )
             }
-            .frame(height: 380)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .onAppear {
+                onDiameterChanged(diameter)
+            }
+            .onChange(of: diameter) { _, newDiameter in
+                onDiameterChanged(newDiameter)
+            }
         }
     }
 }
