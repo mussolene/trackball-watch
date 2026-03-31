@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-03-31
+
+### Fixed
+
+- **macOS:** Injected pointer motion is clamped to `CGDisplayBounds` for the active display so coordinates do not sit past the screen edge (Hot Corners, Dock, and edge gestures behave closer to a physical mouse). Optional `TRACKBALL_SCREEN_EDGE_INSET` adds extra margin from edges (default `0`).
+
+### Changed
+
+- **CI / release:** macOS `lipo` step uses the Tauri `mainBinaryName` binary (`TrackBallWatch`). Windows release uploads NSIS setup `.exe` in addition to MSI.
+
 ## [1.0.3] - 2026-03-31
 
 ### Fixed
