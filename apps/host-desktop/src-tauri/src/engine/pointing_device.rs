@@ -126,18 +126,10 @@ impl PointingDeviceState {
                 (raw_dx / config.packet_scale, raw_dy / config.packet_scale)
             }
         };
-        match mode {
-            DriverMode::Trackpad => {
-                self.last_raw_x = x;
-                self.last_raw_y = y;
-                self.last_packet_x = payload.x;
-                self.last_packet_y = payload.y;
-            }
-            DriverMode::Trackball => {
-                // Defer: `commit_trackball_frame` runs after injection so we don't advance
-                // last_packet when the OS clamps the cursor at a screen edge (virtual slip).
-            }
-        }
+        self.last_raw_x = x;
+        self.last_raw_y = y;
+        self.last_packet_x = payload.x;
+        self.last_packet_y = payload.y;
 
         // Trackball: same speed-dependent gain as trackpad (slow = precise, fast = travel),
         // so finger roll maps to cursor like a mechanical ball, not raw surface deltas.
@@ -157,21 +149,6 @@ impl PointingDeviceState {
             DriverMode::Trackpad => TRACKPAD_BALL_CONFIG,
             DriverMode::Trackball => TRACKBALL_BALL_CONFIG,
         }
-    }
-
-    /// Advance trackball packet state after a touch frame. Call after `handle_touch` for
-    /// `DriverMode::Trackball`. If `slipped` is true, the cursor did not move despite a non-trivial
-    /// injected delta (screen edge clamp) — keep `last_packet` so the user is not forced to
-    /// "unwind" virtual rotation before the cursor can leave the edge.
-    pub fn commit_trackball_frame(&mut self, payload: &TouchPayload, slipped: bool) {
-        if slipped {
-            return;
-        }
-        let config = TRACKBALL_BALL_CONFIG;
-        self.last_raw_x = config.decode_axis(payload.x);
-        self.last_raw_y = config.decode_axis(payload.y);
-        self.last_packet_x = payload.x;
-        self.last_packet_y = payload.y;
     }
 }
 
@@ -230,10 +207,6 @@ mod tests {
                 touch_payload(TouchPhase::Moved, 2, 0),
             )
             .expect("fractional movement expected");
-        state.commit_trackball_frame(
-            &touch_payload(TouchPhase::Moved, 2, 0),
-            false,
-        );
         assert!(
             output.dx > 0.01 && output.dx < 0.02,
             "unexpected dx: {}",
@@ -313,10 +286,6 @@ mod tests {
                 touch_payload(TouchPhase::Moved, i16::MIN + 2, 0),
             )
             .expect("wrapped movement expected");
-        state.commit_trackball_frame(
-            &touch_payload(TouchPhase::Moved, i16::MIN + 2, 0),
-            false,
-        );
         assert!(
             output.dx > 0.01,
             "wrapped dx must stay positive and small, got {}",

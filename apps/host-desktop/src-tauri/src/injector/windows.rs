@@ -8,13 +8,11 @@ use crate::injector::platform::{InjectorError, InputInjector};
 #[cfg(target_os = "windows")]
 mod imp {
     use super::*;
-    use windows::Win32::Foundation::POINT;
     use windows::Win32::UI::Input::KeyboardAndMouse::{
         SendInput, INPUT, INPUT_0, INPUT_MOUSE, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
         MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEEVENTF_WHEEL,
         MOUSEINPUT, MOUSE_EVENT_FLAGS,
     };
-    use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
     pub struct WindowsInjector;
 
@@ -85,16 +83,6 @@ mod imp {
             let delta = (lines * 120.0) as i32;
             self.send_mouse_input(MOUSEEVENTF_WHEEL, 0, 0, delta);
             Ok(())
-        }
-
-        fn cursor_position(&self) -> Result<(f64, f64), InjectorError> {
-            let mut pt = POINT { x: 0, y: 0 };
-            unsafe {
-                if !GetCursorPos(&mut pt).as_bool() {
-                    return Err(InjectorError::Platform("GetCursorPos failed".into()));
-                }
-            }
-            Ok((pt.x as f64, pt.y as f64))
         }
     }
 }

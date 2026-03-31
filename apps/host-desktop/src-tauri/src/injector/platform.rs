@@ -40,7 +40,4 @@ pub trait InputInjector: Send + Sync {
 
     /// Scroll vertically by `lines` (positive = down).
     fn scroll_vertical(&self, lines: f64) -> Result<(), InjectorError>;
-
-    /// Current cursor position in screen pixels (top-left origin, same space as `move_absolute`).
-    fn cursor_position(&self) -> Result<(f64, f64), InjectorError>;
 }
