@@ -54,7 +54,7 @@ final class TrackballInteractionEngine: ObservableObject {
     private let longPressMinDuration: TimeInterval = 0.48
     /// Sub-point noise; `lastDragPoint` is only advanced when movement meets this (avoids host desync).
     private let dragNoiseThreshold: CGFloat = 0.22
-    private let cursorMotionGain: Double = 1.35
+    private let cursorMotionGain: Double = 1.8
     private let dragAngularVelocityBlend: Double = 0.35
 
     func resetInteractionState() {
