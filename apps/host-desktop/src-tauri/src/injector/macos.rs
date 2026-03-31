@@ -172,25 +172,16 @@ mod imp {
             let motion_debug = std::env::var("TRACKBALL_DEBUG_MOTION")
                 .map(|v| v != "0")
                 .unwrap_or(DEFAULT_MOTION_DEBUG);
-            let cache = cursor_target_cache();
-            let mut target = cache.lock().map_err(|_| InjectorError::Platform("cursor cache poisoned".into()))?;
             let actual = current_mouse_position();
-            let (base_x, base_y, drift) = match *target {
-                Some((cached_x, cached_y)) => {
-                    let drift = (actual.0 - cached_x).hypot(actual.1 - cached_y);
-                    if drift > 48.0 {
-                        (actual.0, actual.1, drift)
-                    } else {
-                        (cached_x, cached_y, drift)
-                    }
-                }
-                None => (actual.0, actual.1, 0.0),
-            };
+            // Always anchor relative motion to the real cursor position.
+            // This avoids "virtual overflow" when the cursor is clamped by screen edges.
+            let base_x = actual.0;
+            let base_y = actual.1;
             let next_x = base_x + dx;
             let next_y = base_y + dy;
             if motion_debug {
                 log::debug!(
-                    "injector move_relative: actual=({:.3}, {:.3}) base=({:.3}, {:.3}) delta=({:.3}, {:.3}) next=({:.3}, {:.3}) drift={:.3}",
+                    "injector move_relative: actual=({:.3}, {:.3}) base=({:.3}, {:.3}) delta=({:.3}, {:.3}) next=({:.3}, {:.3})",
                     actual.0,
                     actual.1,
                     base_x,
@@ -198,11 +189,10 @@ mod imp {
                     dx,
                     dy,
                     next_x,
-                    next_y,
-                    drift
+                    next_y
                 );
                 trace_file::append_line(format!(
-                    "injector move_relative actual=({:.3}, {:.3}) base=({:.3}, {:.3}) delta=({:.3}, {:.3}) next=({:.3}, {:.3}) drift={:.3}",
+                    "injector move_relative actual=({:.3}, {:.3}) base=({:.3}, {:.3}) delta=({:.3}, {:.3}) next=({:.3}, {:.3})",
                     actual.0,
                     actual.1,
                     base_x,
@@ -210,8 +200,7 @@ mod imp {
                     dx,
                     dy,
                     next_x,
-                    next_y,
-                    drift
+                    next_y
                 ));
             }
             let event_type = if left_button_held_state()
@@ -224,7 +213,17 @@ mod imp {
                 K_CGEVENT_MOUSE_MOVED
             };
             self.post_mouse_event(event_type, next_x, next_y, K_CGMOUSE_BUTTON_LEFT);
-            *target = Some((next_x, next_y));
+            // Keep cache synced for absolute moves and click paths.
+            let actual_after = current_mouse_position();
+            if let Ok(mut target) = cursor_target_cache().lock() {
+                *target = Some(actual_after);
+            }
+            if motion_debug {
+                trace_file::append_line(format!(
+                    "injector move_relative commit actual_after=({:.3}, {:.3})",
+                    actual_after.0, actual_after.1
+                ));
+            }
             Ok(())
         }
 
