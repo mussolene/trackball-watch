@@ -15,7 +15,7 @@
  */
 import { execSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -85,18 +85,28 @@ function writeJson(path, mutator) {
   writeFileSync(path, JSON.stringify(j, null, 2) + "\n");
 }
 
+const FRONTEND_DIST_STUB =
+  "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body></body></html>\n";
+
 /** Tauri `generate_context!` requires `build.frontendDist` to exist at compile time; CI has no Vite build. */
-function ensureFrontendDistStubForCargoCheck(hostDir) {
-  const indexPath = join(hostDir, "dist", "index.html");
-  if (existsSync(indexPath)) {
-    return;
+function ensureFrontendDistStubForCargoCheck(hostDir, coreDir) {
+  const distDir = resolve(hostDir, "dist");
+  const indexPath = join(distDir, "index.html");
+  const fromManifest = resolve(coreDir, "..", "dist");
+  if (resolve(distDir) !== resolve(fromManifest)) {
+    throw new Error(
+      `sync-version: frontendDist path mismatch: ${distDir} vs ${fromManifest}`
+    );
   }
-  mkdirSync(join(hostDir, "dist"), { recursive: true });
-  writeFileSync(
-    indexPath,
-    "<!DOCTYPE html><html><head><meta charset=\"utf-8\"></head><body></body></html>\n"
-  );
-  console.log("sync-version: wrote stub dist/index.html so cargo check can run (no Vite build in tree)");
+  mkdirSync(distDir, { recursive: true });
+  const inCI =
+    process.env.GITHUB_ACTIONS === "true" || process.env.CI === "true";
+  if (inCI || !existsSync(indexPath)) {
+    writeFileSync(indexPath, FRONTEND_DIST_STUB);
+    console.log(
+      "sync-version: wrote stub dist/index.html so cargo check can run (no Vite build in tree)"
+    );
+  }
 }
 
 function main() {
@@ -130,7 +140,7 @@ function main() {
     return;
   }
 
-  ensureFrontendDistStubForCargoCheck(hostDir);
+  ensureFrontendDistStubForCargoCheck(hostDir, coreDir);
   run("cargo check -q", { cwd: coreDir });
 }
 
