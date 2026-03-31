@@ -71,8 +71,7 @@
   function defaultConfig() {
     return {
       sensitivity: 1.0,
-      mode: 'trackpad',
-      hand: 'right',
+      mode: 'trackball',
       accel: {
         curve: 's_curve',
         sensitivity: 1.0,

@@ -14,11 +14,14 @@ struct TrackballView: View {
     var body: some View {
         GeometryReader { geo in
             let d = min(geo.size.width, geo.size.height) * 0.56
-            ZStack(alignment: .bottomTrailing) {
+            ZStack(alignment: ballAlignment) {
                 Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
                 ballView(d: d)
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: ballAlignment)
+            .onAppear {
+                sessionManager.refreshWearSide()
+            }
             .onReceive(tick) { now in
                 _ = engine.tickPhysics(
                     now: now,
@@ -33,6 +36,15 @@ struct TrackballView: View {
                     isStreamingCoastTouch = false
                 }
             }
+        }
+    }
+
+    private var ballAlignment: Alignment {
+        switch sessionManager.wearSide {
+        case .leftWrist:
+            return .bottomTrailing
+        case .rightWrist:
+            return .bottomLeading
         }
     }
 

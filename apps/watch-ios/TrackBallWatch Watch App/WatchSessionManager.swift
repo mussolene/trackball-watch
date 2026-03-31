@@ -1,6 +1,7 @@
 import Foundation
 import WatchConnectivity
 import Network
+import WatchKit
 
 /// Manages input transport to the desktop:
 ///  1. Direct Wi-Fi (Watch → UDP → Desktop) — primary, low-latency
@@ -20,12 +21,12 @@ final class WatchSessionManager: NSObject, ObservableObject {
     }
 
     enum InputMode  { case trackpad, trackball }
-    enum Handedness { case right, left }
+    enum WearSide { case leftWrist, rightWrist }
 
     @Published var connectionState: ConnectionState = .disconnected
     @Published var transportMode: TransportMode = .none
     @Published var mode: InputMode = .trackpad
-    @Published var hand: Handedness = .right
+    @Published var wearSide: WearSide = .leftWrist
     @Published var trackballFriction: Double = 0.92
     @Published var coastingState: (vx: Double, vy: Double, active: Bool) = (0, 0, false)
 
@@ -43,6 +44,7 @@ final class WatchSessionManager: NSObject, ObservableObject {
 
     override private init() {
         super.init()
+        refreshWearSide()
         activateWCSession()
         startPathMonitor()
         // Auto-connect to last-known host on launch
@@ -121,8 +123,8 @@ final class WatchSessionManager: NSObject, ObservableObject {
         HostStore.shared.activate(config)
 
         let transport = WatchUDPTransport(host: config.host, port: config.port)
-        transport.onConfigPacket  = { [weak self] mode, hand, friction in
-            self?.applyConfig(mode: mode, hand: hand, frictionCenti: friction)
+        transport.onConfigPacket  = { [weak self] mode, friction in
+            self?.applyConfig(mode: mode, frictionCenti: friction)
         }
         transport.onStateFeedback = { [weak self] coasting, vx, vy in
             self?.coastingState = (vx, vy, coasting)
@@ -231,10 +233,14 @@ final class WatchSessionManager: NSObject, ObservableObject {
 
     // MARK: - Config from desktop
 
-    func applyConfig(mode modeByte: UInt8, hand handByte: UInt8, frictionCenti: UInt8) {
+    func applyConfig(mode modeByte: UInt8, frictionCenti: UInt8) {
         mode = modeByte == 1 ? .trackball : .trackpad
-        hand = handByte == 1 ? .left : .right
         trackballFriction = min(0.99, max(0.5, Double(frictionCenti) / 100.0))
+    }
+
+    func refreshWearSide() {
+        let wrist = WKInterfaceDevice.current().wristLocation
+        wearSide = (wrist == .right) ? .rightWrist : .leftWrist
     }
 }
 
@@ -261,9 +267,6 @@ extension WatchSessionManager: WCSessionDelegate {
         Task { @MainActor in
             if let modeStr = message["mode"] as? String {
                 self.mode = modeStr == "trackball" ? .trackball : .trackpad
-            }
-            if let handStr = message["hand"] as? String {
-                self.hand = handStr == "left" ? .left : .right
             }
             if let raw = message["friction"],
                let friction = (raw as? NSNumber)?.doubleValue ?? raw as? Double {
@@ -298,7 +301,6 @@ extension WatchSessionManager: WCSessionDelegate {
 }
 
 // MARK: - WKInterfaceDevice helper
-import WatchKit
 extension WatchSessionManager {
     func playHaptic(_ type: WKHapticType) {
         WKInterfaceDevice.current().play(type)

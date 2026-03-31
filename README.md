@@ -161,8 +161,7 @@ Open **Settings** from the system tray icon.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| Mode | Trackpad | Trackpad or Trackball |
-| Hand | Right | Mirrors cursor direction for left-hand use |
+| Mode | Trackball | Trackpad or Trackball |
 | Sensitivity | 100% | Overall cursor speed |
 | Curve | S-Curve | Linear / Quadratic / S-Curve (tanh) |
 | Friction | 92% | Trackball mode: coasting duration |

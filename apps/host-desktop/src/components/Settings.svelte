@@ -50,24 +50,6 @@
   </section>
 
   <section>
-    <h3>Hand</h3>
-    <div class="button-group">
-      <button
-        class:active={config.hand === 'right'}
-        on:click={() => { config.hand = 'right'; save(); }}
-      >
-        Right
-      </button>
-      <button
-        class:active={config.hand === 'left'}
-        on:click={() => { config.hand = 'left'; save(); }}
-      >
-        Left
-      </button>
-    </div>
-  </section>
-
-  <section>
     <h3>Sensitivity <span class="value">{sensitivityPct}%</span></h3>
     <input
       type="range"
