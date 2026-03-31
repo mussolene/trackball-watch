@@ -766,11 +766,19 @@ fn process_trackpad_touch(
     None
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum TrackballTouchDispatch {
+    /// Injected pointer delta (pixels after virtual-ball gain).
+    Moved { dx: f64, dy: f64 },
+    /// Contact advanced on the watch but motion was below the jitter deadzone.
+    Deadzone,
+}
+
 fn process_trackball_touch(
     s: &mut AppState,
     header: protocol::packets::PacketHeader,
     payload: protocol::packets::TouchPayload,
-) -> Option<(f64, f64)> {
+) -> Option<TrackballTouchDispatch> {
     let phase = TouchPhase::try_from(payload.phase).unwrap_or(TouchPhase::Moved);
     if s.motion_debug {
         log::debug!(
@@ -810,9 +818,18 @@ fn process_trackball_touch(
 
     // In trackball mode the watch already streams a virtual surface-contact point.
     // Treat deltas as physical rolling displacement, not as a noisy pointer input stream.
-    let output = s
+    let output = match s
         .pointing_device
-        .handle_touch(DriverMode::Trackball, payload)?;
+        .handle_touch(DriverMode::Trackball, payload)
+    {
+        Some(o) => o,
+        None => {
+            if phase == TouchPhase::Began {
+                return None;
+            }
+            return Some(TrackballTouchDispatch::Deadzone);
+        }
+    };
     if s.motion_debug {
         log_motion_telemetry("trackball", output.telemetry);
         trace_file::append_line(format!(
@@ -825,7 +842,10 @@ fn process_trackball_touch(
     // - while the finger is rolling the ball, the cursor follows only the current angular change
     // - if the ball stops under the finger, the cursor stops immediately
     // Inertia is started only by an explicit FLING gesture after release.
-    Some((output.dx, output.dy))
+    Some(TrackballTouchDispatch::Moved {
+        dx: output.dx,
+        dy: output.dy,
+    })
 }
 
 // ── Input event handler ───────────────────────────────────────────────────────
@@ -942,7 +962,7 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                     }
                 }
                 InputMode::Trackball => {
-                    let output = process_trackball_touch(&mut s, header, payload);
+                    let dispatch = process_trackball_touch(&mut s, header, payload);
                     let should_finish_drag = s.left_button_drag_active
                         && s.left_button_held
                         && matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled);
@@ -951,13 +971,29 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                         s.left_button_drag_active = false;
                     }
                     drop(s);
-                    if let Some((sx, sy)) = output {
-                        dispatch_input_action(app, move || match injector::create_injector() {
-                            Ok(inj) => {
-                                let _ = inj.move_relative(sx, sy);
-                            }
-                            Err(e) => log::warn!("Injector unavailable: {}", e),
-                        });
+                    match dispatch {
+                        None => {}
+                        Some(TrackballTouchDispatch::Deadzone) => {
+                            let mut g = state.lock().unwrap();
+                            g.pointing_device.commit_trackball_frame(&payload, false);
+                        }
+                        Some(TrackballTouchDispatch::Moved { dx, dy }) => {
+                            let slip = match injector::create_injector() {
+                                Ok(inj) => {
+                                    let before = inj.cursor_position().unwrap_or((0.0, 0.0));
+                                    let cmd = (dx * dx + dy * dy).sqrt();
+                                    let _ = inj.move_relative(dx, dy);
+                                    let after = inj.cursor_position().unwrap_or((0.0, 0.0));
+                                    let moved = ((after.0 - before.0).powi(2)
+                                        + (after.1 - before.1).powi(2))
+                                    .sqrt();
+                                    moved < 0.5 && cmd > 0.5
+                                }
+                                Err(_) => false,
+                            };
+                            let mut g = state.lock().unwrap();
+                            g.pointing_device.commit_trackball_frame(&payload, slip);
+                        }
                     }
                     if should_finish_drag {
                         dispatch_input_action(app, move || match injector::create_injector() {

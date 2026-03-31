@@ -199,6 +199,10 @@ mod imp {
     }
 
     impl InputInjector for MacOSInjector {
+        fn cursor_position(&self) -> Result<(f64, f64), InjectorError> {
+            Ok(current_mouse_position())
+        }
+
         /// `dx`/`dy` may be fractional; `CGEvent` uses `CGFloat` (sub-point positioning).
         fn move_relative(&self, dx: f64, dy: f64) -> Result<(), InjectorError> {
             let motion_debug = std::env::var("TRACKBALL_DEBUG_MOTION")

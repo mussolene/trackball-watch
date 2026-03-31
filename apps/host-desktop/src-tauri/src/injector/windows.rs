@@ -86,6 +86,16 @@ mod imp {
             self.send_mouse_input(MOUSEEVENTF_WHEEL, 0, 0, delta);
             Ok(())
         }
+
+        fn cursor_position(&self) -> Result<(f64, f64), InjectorError> {
+            let mut pt = POINT { x: 0, y: 0 };
+            unsafe {
+                if !GetCursorPos(&mut pt).as_bool() {
+                    return Err(InjectorError::Platform("GetCursorPos failed".into()));
+                }
+            }
+            Ok((pt.x as f64, pt.y as f64))
+        }
     }
 }
 
