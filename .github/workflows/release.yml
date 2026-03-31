@@ -55,13 +55,20 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
 
+      # Tauri uses `mainBinaryName` (TrackBallWatch) for the release binary, not Cargo's [[bin]] name.
       - name: Create universal binary with lipo
         run: |
+          set -euo pipefail
+          AARCH_DIR="apps/host-desktop/src-tauri/target/aarch64-apple-darwin/release"
+          X64_DIR="apps/host-desktop/src-tauri/target/x86_64-apple-darwin/release"
+          if [[ -f "$AARCH_DIR/TrackBallWatch" ]]; then AARCH_BIN="$AARCH_DIR/TrackBallWatch"
+          elif [[ -f "$AARCH_DIR/trackball-watch" ]]; then AARCH_BIN="$AARCH_DIR/trackball-watch"
+          else echo "No aarch64 binary in $AARCH_DIR" >&2; ls -la "$AARCH_DIR" >&2 || true; exit 1; fi
+          if [[ -f "$X64_DIR/TrackBallWatch" ]]; then X64_BIN="$X64_DIR/TrackBallWatch"
+          elif [[ -f "$X64_DIR/trackball-watch" ]]; then X64_BIN="$X64_DIR/trackball-watch"
+          else echo "No x86_64 binary in $X64_DIR" >&2; ls -la "$X64_DIR" >&2 || true; exit 1; fi
           mkdir -p universal/TrackBallWatch.app/Contents/MacOS
-          lipo -create \
-            apps/host-desktop/src-tauri/target/aarch64-apple-darwin/release/trackball-watch \
-            apps/host-desktop/src-tauri/target/x86_64-apple-darwin/release/trackball-watch \
-            -output universal/trackball-watch-universal
+          lipo -create "$AARCH_BIN" "$X64_BIN" -output universal/trackball-watch-universal
 
       - name: Notarize (production only)
         if: env.HAS_APPLE_NOTARIZE == 'true'
