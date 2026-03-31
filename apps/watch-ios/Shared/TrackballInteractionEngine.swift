@@ -114,10 +114,12 @@ final class TrackballInteractionEngine: ObservableObject {
 
         let stepRotation = rotationFromPlaneDisplacement(dx: Double(dx), dy: Double(dy), radius: radius)
         orientation = simd_normalize(stepRotation * orientation)
+        virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + dx)
+        virtualContactPoint.y = clampVirtualAxis(virtualContactPoint.y + dy)
 
         let speed = hypot(dx, dy)
         pressureByte = UInt8(clamping: Int(min(255.0, max(1.0, 24.0 + speed * 5.5))))
-        return []
+        return [touchEvent(.moved)]
     }
 
     func handleDragEnded(
@@ -177,22 +179,13 @@ final class TrackballInteractionEngine: ObservableObject {
         let dt = max(0.001, min(0.05, now.timeIntervalSince(lastTick)))
         lastTick = now
 
-        // Finger down: ball rolls on virtual plane (screen); contact point = cursor analog.
-        // In UIKit coordinates (x right, y down), the screen-plane velocity is (ω_y R, ω_x R).
+        // During drag, contact movement is integrated directly in handleDragChanged so that
+        // cursor movement stays exactly in lockstep with visible sphere rotation.
         if isDragging {
             if now.timeIntervalSince(lastRollingDragEventTime) > 0.08 {
                 angularVelocity = .zero
-                return .zero
             }
-            let speed = simd_length(angularVelocity)
-            guard speed > 0.01 else {
-                return .zero
-            }
-            let radius = Double(ballDiameter / 2.0)
-            let delta = planeDisplacementFromOmega(angularVelocity, radius: radius, dt: dt)
-            virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + delta.x)
-            virtualContactPoint.y = clampVirtualAxis(virtualContactPoint.y + delta.y)
-            return delta
+            return .zero
         }
 
         if let feedback = coastingFeedback, feedback.active {

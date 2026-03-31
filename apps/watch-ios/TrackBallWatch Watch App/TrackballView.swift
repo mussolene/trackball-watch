@@ -20,7 +20,7 @@ struct TrackballView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             .onReceive(tick) { now in
                 let feedback = sessionManager.coastingState
-                let delta = engine.tickPhysics(
+                _ = engine.tickPhysics(
                     now: now,
                     ballDiameter: d,
                     friction: sessionManager.trackballFriction,
@@ -30,19 +30,6 @@ struct TrackballView: View {
                         vy: feedback.vy
                     )
                 )
-                // Rolling displacement is integrated in tickPhysics while dragging; emit TOUCH moved here.
-                if engine.isDragging, hypot(delta.x, delta.y) > 1e-5,
-                   case let .touch(phase, x, y, pressure) = engine.currentTouchEvent(phase: .moved) {
-                    sessionManager.send(
-                        TBPPacket.touch(
-                            touchId: 0,
-                            phase: touchPhase(phase),
-                            x: x,
-                            y: y,
-                            pressure: pressure
-                        )
-                    )
-                }
             }
         }
     }
