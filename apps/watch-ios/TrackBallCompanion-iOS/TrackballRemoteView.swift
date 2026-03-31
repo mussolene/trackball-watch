@@ -90,6 +90,9 @@ struct TrackballRemoteView: View {
             fingerLocation: visibleFingerLocation,
             onChanged: onDragChanged,
             onEnded: onDragEnded,
+            onTap: handleTapGesture,
+            onDoubleTap: handleDoubleTapGesture,
+            onLongPress: handleLongPressGesture,
             onDiameterChanged: { diameter in
                 currentTrackballDiameter = diameter
             }
@@ -266,6 +269,27 @@ struct TrackballRemoteView: View {
         sendRelease(events)
     }
 
+    private func handleTapGesture() {
+        tapFeedback.impactOccurred(intensity: 0.7)
+        lastGesture = "Tap"
+        deferTouchEndUntilCoastStops = false
+        sendGesture(.tap)
+    }
+
+    private func handleDoubleTapGesture() {
+        doubleTapFeedback.impactOccurred(intensity: 0.9)
+        lastGesture = "Double Tap"
+        deferTouchEndUntilCoastStops = false
+        sendGesture(.doubleTap)
+    }
+
+    private func handleLongPressGesture() {
+        impactFeedback.impactOccurred(intensity: 0.85)
+        lastGesture = "Long Press"
+        deferTouchEndUntilCoastStops = false
+        sendGesture(.longPress)
+    }
+
     private func send(_ events: [TrackballEngineEvent]) {
         for event in events {
             switch event {
@@ -274,18 +298,8 @@ struct TrackballRemoteView: View {
                     impactFeedback.impactOccurred(intensity: 0.45)
                 }
                 sendTouch(phase: phase, x: x, y: y, pressure: pressure)
-            case .tap:
-                tapFeedback.impactOccurred(intensity: 0.7)
-                lastGesture = "Tap"
-                sendGesture(.tap)
-            case .doubleTap:
-                doubleTapFeedback.impactOccurred(intensity: 0.9)
-                lastGesture = "Double Tap"
-                sendGesture(.doubleTap)
-            case .longPress:
-                impactFeedback.impactOccurred(intensity: 0.85)
-                lastGesture = "Long Press"
-                sendGesture(.longPress)
+            case .tap, .doubleTap, .longPress:
+                break
             case let .fling(vx, vy):
                 impactFeedback.impactOccurred(intensity: 0.7)
                 lastGesture = "Fling"
@@ -308,21 +322,8 @@ struct TrackballRemoteView: View {
                 } else {
                     sendTouch(phase: phase, x: x, y: y, pressure: pressure)
                 }
-            case .tap:
-                tapFeedback.impactOccurred(intensity: 0.7)
-                lastGesture = "Tap"
-                sendGesture(.tap)
-                deferTouchEndUntilCoastStops = false
-            case .doubleTap:
-                doubleTapFeedback.impactOccurred(intensity: 0.9)
-                lastGesture = "Double Tap"
-                sendGesture(.doubleTap)
-                deferTouchEndUntilCoastStops = false
-            case .longPress:
-                impactFeedback.impactOccurred(intensity: 0.85)
-                lastGesture = "Long Press"
-                sendGesture(.longPress)
-                deferTouchEndUntilCoastStops = false
+            case .tap, .doubleTap, .longPress:
+                break
             case let .fling(vx, vy):
                 impactFeedback.impactOccurred(intensity: 0.7)
                 lastGesture = "Fling"
@@ -398,6 +399,9 @@ private struct TrackballRemoteSurface: View {
     let fingerLocation: CGPoint?
     let onChanged: (DragGesture.Value, CGFloat) -> Void
     let onEnded: (DragGesture.Value, CGFloat) -> Void
+    let onTap: () -> Void
+    let onDoubleTap: () -> Void
+    let onLongPress: () -> Void
     let onDiameterChanged: (CGFloat) -> Void
 
     var body: some View {
@@ -427,6 +431,32 @@ private struct TrackballRemoteSurface: View {
                     )
                 }
                 .frame(width: diameter, height: diameter)
+                .overlay {
+                    Circle()
+                        .fill(Color.clear)
+                        .frame(width: diameter, height: diameter)
+                        .contentShape(Circle())
+                        .simultaneousGesture(
+                            ExclusiveGesture(
+                                TapGesture(count: 2),
+                                TapGesture(count: 1)
+                            )
+                            .onEnded { result in
+                                switch result {
+                                case .first:
+                                    onDoubleTap()
+                                case .second:
+                                    onTap()
+                                }
+                            }
+                        )
+                        .simultaneousGesture(
+                            LongPressGesture(minimumDuration: 0.48)
+                                .onEnded { _ in
+                                    onLongPress()
+                                }
+                        )
+                }
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0, coordinateSpace: .local)
