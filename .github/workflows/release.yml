@@ -219,6 +219,14 @@ jobs:
           name: windows-installers
           path: dist/windows
 
+      # Artifacts keep repo-relative paths under dist/*, so globs like dist/macos/*.dmg miss nested
+      # bundle/dmg/*.dmg — flatten for softprops/action-gh-release.
+      - name: Stage release assets
+        run: |
+          mkdir -p release_assets
+          find dist/macos dist/windows -type f \( -name '*.dmg' -o -name '*.msi' -o -name '*.exe' \) -exec cp -f {} release_assets/ \;
+          ls -la release_assets
+
       - name: Extract CHANGELOG excerpt
         id: changelog
         run: |
@@ -235,7 +243,4 @@ jobs:
           body: ${{ steps.changelog.outputs.notes }}
           draft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
-          files: |
-            dist/macos/*.dmg
-            dist/windows/*.msi
-            dist/windows/*.exe
+          files: release_assets/*
