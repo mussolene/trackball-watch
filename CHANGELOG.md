@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-03-31
+
 ### Fixed
 
 - **macOS:** Desktop bundle id was `com.trackball-watch.app` (`.app` suffix confuses the system), the main binary was linker-signed with **Info.plist not bound** to the code signature, and `entitlements.plist` was missing — together this broke TCC / Accessibility matching. Now: `com.trackballwatch.host`, executable `TrackBallWatch`, real entitlements, merged `NSAccessibilityUsageDescription`, and post-build `codesign` so the plist seals with the app (iOS bundle ids unchanged).
