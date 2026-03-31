@@ -887,11 +887,8 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                     dispatch_input_action(app, || {
                         match injector::create_injector() {
                             Ok(i) => {
-                                if let Err(e) = i.left_click() {
-                                    log::warn!("First double-click injection failed: {}", e);
-                                }
-                                if let Err(e) = i.left_click() {
-                                    log::warn!("Second double-click injection failed: {}", e);
+                                if let Err(e) = i.double_click() {
+                                    log::warn!("Double-click injection failed: {}", e);
                                 }
                             }
                             Err(e) => log::warn!("Injector unavailable: {}", e),

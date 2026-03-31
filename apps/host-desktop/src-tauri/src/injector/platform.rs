@@ -20,6 +20,12 @@ pub trait InputInjector: Send + Sync {
     /// Perform a left click.
     fn left_click(&self) -> Result<(), InjectorError>;
 
+    /// Perform a system-recognized double click.
+    fn double_click(&self) -> Result<(), InjectorError> {
+        self.left_click()?;
+        self.left_click()
+    }
+
     /// Perform a right click.
     fn right_click(&self) -> Result<(), InjectorError>;
 

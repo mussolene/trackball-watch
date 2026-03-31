@@ -35,6 +35,7 @@ mod imp {
     // CGMouseButton constants
     const K_CGMOUSE_BUTTON_LEFT: u32 = 0;
     const K_CGMOUSE_BUTTON_RIGHT: u32 = 1;
+    const K_CGMOUSE_EVENT_CLICK_STATE: u32 = 1;
 
     // kCGHIDEventTap = 0
     const K_CGHIDEVENT_TAP: u32 = 0;
@@ -59,6 +60,7 @@ mod imp {
             wheel3: i32,
         ) -> CGEventRef;
         fn CGEventPost(tap: u32, event: CGEventRef);
+        fn CGEventSetIntegerValueField(event: CGEventRef, field: u32, value: i64);
         fn CFRelease(cf: CGEventRef);
         fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
     }
@@ -130,6 +132,23 @@ mod imp {
                 }
             }
         }
+
+        fn post_click_event(&self, event_type: u32, button: u32, click_state: i64) {
+            let (x, y) = current_mouse_position();
+            unsafe {
+                let event = CGEventCreateMouseEvent(
+                    std::ptr::null_mut(),
+                    event_type,
+                    CGPoint { x, y },
+                    button,
+                );
+                if !event.is_null() {
+                    CGEventSetIntegerValueField(event, K_CGMOUSE_EVENT_CLICK_STATE, click_state);
+                    CGEventPost(K_CGHIDEVENT_TAP, event);
+                    CFRelease(event);
+                }
+            }
+        }
     }
 
     impl InputInjector for MacOSInjector {
@@ -154,6 +173,14 @@ mod imp {
             let (x, y) = current_mouse_position();
             self.post_mouse_event(K_CGEVENT_LEFT_MOUSE_DOWN, x, y, K_CGMOUSE_BUTTON_LEFT);
             self.post_mouse_event(K_CGEVENT_LEFT_MOUSE_UP, x, y, K_CGMOUSE_BUTTON_LEFT);
+            Ok(())
+        }
+
+        fn double_click(&self) -> Result<(), InjectorError> {
+            self.post_click_event(K_CGEVENT_LEFT_MOUSE_DOWN, K_CGMOUSE_BUTTON_LEFT, 1);
+            self.post_click_event(K_CGEVENT_LEFT_MOUSE_UP, K_CGMOUSE_BUTTON_LEFT, 1);
+            self.post_click_event(K_CGEVENT_LEFT_MOUSE_DOWN, K_CGMOUSE_BUTTON_LEFT, 2);
+            self.post_click_event(K_CGEVENT_LEFT_MOUSE_UP, K_CGMOUSE_BUTTON_LEFT, 2);
             Ok(())
         }
 
