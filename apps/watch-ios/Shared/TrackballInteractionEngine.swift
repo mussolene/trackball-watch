@@ -64,6 +64,7 @@ final class TrackballInteractionEngine: ObservableObject {
     private let dragAngularVelocityBlend: Double = 0.35
     private let dragPlaneVelocityBlend: Double = 0.35
     private let releaseMotionIdleTimeout: TimeInterval = 0.09
+    private let releaseLowSpeedThreshold: CGFloat = 0.2
     /// Keep per-packet axis step safely below wrap ambiguity threshold (Int16 ring).
     private let maxPacketDeltaPerTickRaw: CGFloat = 12_000
 
@@ -190,31 +191,48 @@ final class TrackballInteractionEngine: ObservableObject {
 
         if stoppedCoastByTouch {
             stoppedCoastByTouch = false
-            // Touch-down while coasting stopped inertia; short lift-off can still be a click.
-            let tapDistanceThreshold = max(tapMaxDistance, sphereDiameter * 0.08)
-            let distance = hypot(point.x - dragStart.x, point.y - dragStart.y)
-            let duration = Date().timeIntervalSince(dragStartTime)
+            // Touch-down while coasting stopped prior inertia.
+            // Only treat quick no-move lift as tap-to-stop; if user rolled again,
+            // continue with regular release/inertia logic below.
             if distance < tapDistanceThreshold && duration < tapMaxDuration {
+                stopCoastingMotion()
                 return tapEvents() + [touchEvent(.ended)]
             }
-            return [touchEvent(.ended)]
         }
 
         if distance < tapDistanceThreshold && duration >= longPressMinDuration {
             lastTapAt = .distantPast
+            stopCoastingMotion()
             return [.longPress, touchEvent(.ended)]
         }
 
         if distance < tapDistanceThreshold && duration < tapMaxDuration {
+            stopCoastingMotion()
             return tapEvents() + [touchEvent(.ended)]
         }
 
         let radius = Double(sphereDiameter / 2.0)
         let effectiveCursorGain = cursorGain(forBallDiameter: Double(sphereDiameter))
         let idleSinceLastRolling = now.timeIntervalSince(lastRollingDragEventTime)
+        let releaseSpeed = hypot(coastingPlaneVelocity.x, coastingPlaneVelocity.y)
+        let endDX = point.x - lastDragPoint.x
+        let endDY = point.y - lastDragPoint.y
+        let endDistance = hypot(endDX, endDY)
+        // Finger lift without fresh movement should never create a cursor jump at low speed.
+        // But if the ball still rolls fast, keep inertia alive.
+        if endDistance < dragNoiseThreshold {
+            if releaseSpeed <= releaseLowSpeedThreshold || idleSinceLastRolling > releaseMotionIdleTimeout {
+                stopCoastingMotion()
+                return [touchEvent(.ended)]
+            }
+            if radius > 0 {
+                return []
+            }
+            stopCoastingMotion()
+            return [touchEvent(.ended)]
+        }
         if idleSinceLastRolling > releaseMotionIdleTimeout {
-            angularVelocity = .zero
-            coastingPlaneVelocity = .zero
+            stopCoastingMotion()
             return [touchEvent(.ended)]
         }
         if radius > 0 {
@@ -233,36 +251,6 @@ final class TrackballInteractionEngine: ObservableObject {
                 )
             }
 
-            // Recover terminal velocity from the final drag segment in case the last onChanged
-            // sample was skipped by gesture/event timing right before lift-off.
-            let endDX = point.x - lastDragPoint.x
-            let endDY = point.y - lastDragPoint.y
-            let endDistance = hypot(endDX, endDY)
-            let sampleAge = now.timeIntervalSince(lastOmegaSampleTime)
-            // Ignore tiny lift-off jitter; only recover if the last real drag sample is stale.
-            if hypot(coastingPlaneVelocity.x, coastingPlaneVelocity.y) <= 0.12,
-               hypot(lastAcceptedDragDelta.x, lastAcceptedDragDelta.y) < dragNoiseThreshold,
-               endDistance >= dragNoiseThreshold,
-               sampleAge > 0.012 {
-                let endDt = max(1e-4, min(0.25, now.timeIntervalSince(lastOmegaSampleTime)))
-                let terminalOmega = angularVelocityFromPlaneDisplacement(
-                    dx: Double(endDX),
-                    dy: Double(endDY),
-                    radius: radius,
-                    dt: endDt
-                )
-                if simd_length(angularVelocity) > 1e-4 {
-                    angularVelocity = angularVelocity * (1.0 - dragAngularVelocityBlend)
-                        + terminalOmega * dragAngularVelocityBlend
-                } else {
-                    angularVelocity = terminalOmega
-                }
-                coastingPlaneVelocity = CGPoint(
-                    x: (endDX * effectiveCursorGain) / endDt,
-                    y: (endDY * effectiveCursorGain) / endDt
-                )
-            }
-
             let linearVX = coastingPlaneVelocity.x
             let linearVY = coastingPlaneVelocity.y
             if hypot(linearVX, linearVY) > 0.12 {
@@ -270,12 +258,10 @@ final class TrackballInteractionEngine: ObservableObject {
                 // The finger is no longer touching, but the ball is still rolling on the plane.
                 return []
             }
-            angularVelocity = .zero
-            coastingPlaneVelocity = .zero
+            stopCoastingMotion()
             return [touchEvent(.ended)]
         } else {
-            angularVelocity = .zero
-            coastingPlaneVelocity = .zero
+            stopCoastingMotion()
             return [touchEvent(.ended)]
         }
     }
@@ -400,6 +386,11 @@ final class TrackballInteractionEngine: ObservableObject {
         }
         lastTapAt = now
         return [.tap]
+    }
+
+    private func stopCoastingMotion() {
+        angularVelocity = .zero
+        coastingPlaneVelocity = .zero
     }
 
     private func accumulateVirtualAxis(_ value: CGFloat, delta: CGFloat) -> CGFloat {

@@ -36,6 +36,7 @@ struct AppState {
     udp_tx: Option<tokio::sync::mpsc::UnboundedSender<Vec<u8>>>,
     motion_debug: bool,
     left_button_held: bool,
+    left_button_drag_active: bool,
 }
 
 impl AppState {
@@ -52,6 +53,7 @@ impl AppState {
                 .map(|v| v != "0")
                 .unwrap_or(DEFAULT_MOTION_DEBUG),
             left_button_held: false,
+            left_button_drag_active: false,
         }
     }
 }
@@ -137,7 +139,12 @@ fn save_config(
         s.trackball = TrackballState::new(config.trackball_friction, 0.5);
         s.config = config;
         if let Some(tx) = s.udp_tx.clone() {
-            pending_mode_push = Some((tx, s.config.mode, s.config.hand, s.config.trackball_friction));
+            pending_mode_push = Some((
+                tx,
+                s.config.mode,
+                s.config.hand,
+                s.config.trackball_friction,
+            ));
         }
     }
     if let Some((tx, mode, hand, friction)) = pending_mode_push {
@@ -145,9 +152,7 @@ fn save_config(
             log::warn!("mode push after save failed: {}", e);
         }
     }
-    Ok(SaveConfigResult {
-        needs_app_restart,
-    })
+    Ok(SaveConfigResult { needs_app_restart })
 }
 
 /// Accessibility trust + resolved executable path (for System Settings → Accessibility).
@@ -232,7 +237,12 @@ fn get_profiles() -> Vec<settings::profiles::Profile> {
 fn push_mode(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(), String> {
     let s = state.lock().unwrap();
     if let Some(tx) = &s.udp_tx {
-        send_mode_packet(tx, s.config.mode, s.config.hand, s.config.trackball_friction)?;
+        send_mode_packet(
+            tx,
+            s.config.mode,
+            s.config.hand,
+            s.config.trackball_friction,
+        )?;
     }
     Ok(())
 }
@@ -247,8 +257,7 @@ fn send_mode_packet(
     let mode_byte: u8 = if mode == InputMode::Trackball { 1 } else { 0 };
     let hand_byte: u8 = if hand == Hand::Left { 1 } else { 0 };
     // Centi-units (50–99 → 0.50–0.99); matches watch visual coast damping.
-    let friction_byte =
-        ((trackball_friction.clamp(0.5, 0.99) * 100.0).round() as u8).clamp(50, 99);
+    let friction_byte = ((trackball_friction.clamp(0.5, 0.99) * 100.0).round() as u8).clamp(50, 99);
     let header = PacketHeader {
         seq: 0,
         packet_type: packet_type::CONFIG,
@@ -345,9 +354,13 @@ fn get_pairing_info(state: tauri::State<Arc<Mutex<AppState>>>) -> PairingInfo {
 
 pub fn run() {
     trace_file::reset();
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or(if DEFAULT_MOTION_DEBUG { "debug" } else { "info" })
-    )
+    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(
+        if DEFAULT_MOTION_DEBUG {
+            "debug"
+        } else {
+            "info"
+        },
+    ))
     .init();
     trace_file::append_line("host launch");
 
@@ -703,16 +716,18 @@ fn trackball_coast_step(state: &Arc<Mutex<AppState>>, dt: f64, app: &tauri::AppH
     // Throttle STATE_FEEDBACK to ~10 Hz (every 6 frames at 60 Hz)
     s.feedback_frame_count = s.feedback_frame_count.wrapping_add(1);
     let should_send_feedback = s.feedback_frame_count % 6 == 0;
-    let udp_tx = if should_send_feedback { s.udp_tx.clone() } else { None };
+    let udp_tx = if should_send_feedback {
+        s.udp_tx.clone()
+    } else {
+        None
+    };
     drop(s);
     if sx != 0.0 || sy != 0.0 {
-        dispatch_input_action(app, move || {
-            match injector::create_injector() {
-                Ok(inj) => {
-                    let _ = inj.move_relative(sx, sy);
-                }
-                Err(e) => log::warn!("Injector unavailable (coast): {}", e),
+        dispatch_input_action(app, move || match injector::create_injector() {
+            Ok(inj) => {
+                let _ = inj.move_relative(sx, sy);
             }
+            Err(e) => log::warn!("Injector unavailable (coast): {}", e),
         });
     }
     if let Some(tx) = udp_tx {
@@ -740,11 +755,16 @@ fn process_trackpad_touch(
     }
     if !s.pointing_device.accept_sequence(header.seq) {
         if s.motion_debug {
-            log::debug!("trackpad: dropped stale/duplicate touch packet seq={}", header.seq);
+            log::debug!(
+                "trackpad: dropped stale/duplicate touch packet seq={}",
+                header.seq
+            );
         }
         return None;
     }
-    let output = s.pointing_device.handle_touch(DriverMode::Trackpad, payload);
+    let output = s
+        .pointing_device
+        .handle_touch(DriverMode::Trackpad, payload);
     if let Some(output) = output {
         if s.motion_debug {
             log_motion_telemetry("trackpad", output.telemetry);
@@ -782,11 +802,11 @@ fn process_trackball_touch(
 
     if !s.pointing_device.accept_sequence(header.seq) {
         if s.motion_debug {
-            log::debug!("trackball: dropped stale/duplicate touch packet seq={}", header.seq);
-            trace_file::append_line(format!(
-                "trackball dropped stale seq={}",
+            log::debug!(
+                "trackball: dropped stale/duplicate touch packet seq={}",
                 header.seq
-            ));
+            );
+            trace_file::append_line(format!("trackball dropped stale seq={}", header.seq));
         }
         return None;
     }
@@ -798,7 +818,9 @@ fn process_trackball_touch(
 
     // In trackball mode the watch already streams a virtual surface-contact point.
     // Treat deltas as physical rolling displacement, not as a noisy pointer input stream.
-    let output = s.pointing_device.handle_touch(DriverMode::Trackball, payload);
+    let output = s
+        .pointing_device
+        .handle_touch(DriverMode::Trackball, payload);
     let Some(output) = output else {
         return None;
     };
@@ -806,9 +828,7 @@ fn process_trackball_touch(
         log_motion_telemetry("trackball", output.telemetry);
         trace_file::append_line(format!(
             "trackball output dx={:.4} dy={:.4} decision={:?}",
-            output.dx,
-            output.dy,
-            output.telemetry.decision
+            output.dx, output.dy, output.telemetry.decision
         ));
     }
 
@@ -854,9 +874,14 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
             // Ensure watch mode reflects current desktop mode right after link-up.
             let mode_push = {
                 let s = state.lock().unwrap();
-                s.udp_tx
-                    .clone()
-                    .map(|tx| (tx, s.config.mode, s.config.hand, s.config.trackball_friction))
+                s.udp_tx.clone().map(|tx| {
+                    (
+                        tx,
+                        s.config.mode,
+                        s.config.hand,
+                        s.config.trackball_friction,
+                    )
+                })
             };
             if let Some((tx, mode, hand, friction)) = mode_push {
                 let _ = send_mode_packet(&tx, mode, hand, friction);
@@ -870,6 +895,7 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                 let mut s = state.lock().unwrap();
                 let should_release = s.left_button_held;
                 s.left_button_held = false;
+                s.left_button_drag_active = false;
                 s.connected_peer = None;
                 s.trackball.stop();
                 reset_touch_pipeline(&mut s);
@@ -897,9 +923,17 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
 
         InputEvent::Touch(header, payload) => {
             let mut s = state.lock().unwrap();
+            let phase = TouchPhase::try_from(payload.phase).unwrap_or(TouchPhase::Moved);
             match s.config.mode {
                 InputMode::Trackpad => {
                     let output = process_trackpad_touch(&mut s, header, payload);
+                    let should_finish_drag = s.left_button_drag_active
+                        && s.left_button_held
+                        && matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled);
+                    if should_finish_drag {
+                        s.left_button_held = false;
+                        s.left_button_drag_active = false;
+                    }
                     drop(s);
                     if let Some((sx, sy)) = output {
                         dispatch_input_action(app, move || match injector::create_injector() {
@@ -909,14 +943,47 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
                             Err(e) => log::warn!("Injector unavailable: {}", e),
                         });
                     }
+                    if should_finish_drag {
+                        dispatch_input_action(app, move || match injector::create_injector() {
+                            Ok(i) => {
+                                if let Err(e) = i.left_button_up() {
+                                    log::warn!("Left button release after drag failed: {}", e);
+                                }
+                                if let Err(e) = i.right_click() {
+                                    log::warn!("Right click after long press failed: {}", e);
+                                }
+                            }
+                            Err(e) => log::warn!("Injector unavailable: {}", e),
+                        });
+                    }
                 }
                 InputMode::Trackball => {
                     let output = process_trackball_touch(&mut s, header, payload);
+                    let should_finish_drag = s.left_button_drag_active
+                        && s.left_button_held
+                        && matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled);
+                    if should_finish_drag {
+                        s.left_button_held = false;
+                        s.left_button_drag_active = false;
+                    }
                     drop(s);
                     if let Some((sx, sy)) = output {
                         dispatch_input_action(app, move || match injector::create_injector() {
                             Ok(inj) => {
                                 let _ = inj.move_relative(sx, sy);
+                            }
+                            Err(e) => log::warn!("Injector unavailable: {}", e),
+                        });
+                    }
+                    if should_finish_drag {
+                        dispatch_input_action(app, move || match injector::create_injector() {
+                            Ok(i) => {
+                                if let Err(e) = i.left_button_up() {
+                                    log::warn!("Left button release after drag failed: {}", e);
+                                }
+                                if let Err(e) = i.right_click() {
+                                    log::warn!("Right click after long press failed: {}", e);
+                                }
                             }
                             Err(e) => log::warn!("Injector unavailable: {}", e),
                         });
@@ -930,60 +997,50 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
             match GestureType::try_from(payload.gesture_type).ok() {
                 Some(GestureType::Tap) => {
                     log::info!("Gesture received: tap");
-                    let release_held = s.left_button_held;
-                    if release_held {
-                        s.left_button_held = false;
+                    if s.left_button_held {
+                        drop(s);
+                        return;
                     }
                     drop(s);
-                    dispatch_input_action(app, move || {
-                        match injector::create_injector() {
-                            Ok(i) => {
-                                let result = if release_held {
-                                    i.left_button_up()
-                                } else {
-                                    i.left_click()
-                                };
-                                if let Err(e) = result {
-                                    log::warn!("Tap injection failed: {}", e);
-                                }
+                    dispatch_input_action(app, move || match injector::create_injector() {
+                        Ok(i) => {
+                            let result = i.left_click();
+                            if let Err(e) = result {
+                                log::warn!("Tap injection failed: {}", e);
                             }
-                            Err(e) => log::warn!("Injector unavailable: {}", e),
                         }
+                        Err(e) => log::warn!("Injector unavailable: {}", e),
                     });
                 }
                 Some(GestureType::DoubleTap) => {
                     log::info!("Gesture received: double tap");
                     drop(s);
-                    dispatch_input_action(app, move || {
-                        match injector::create_injector() {
-                            Ok(i) => {
-                                if let Err(e) = i.double_click() {
-                                    log::warn!("Double-click injection failed: {}", e);
-                                }
+                    dispatch_input_action(app, move || match injector::create_injector() {
+                        Ok(i) => {
+                            if let Err(e) = i.double_click() {
+                                log::warn!("Double-click injection failed: {}", e);
                             }
-                            Err(e) => log::warn!("Injector unavailable: {}", e),
                         }
+                        Err(e) => log::warn!("Injector unavailable: {}", e),
                     });
                 }
                 Some(GestureType::LongPress) => {
                     log::info!("Gesture received: long press");
-                    let hold_active = s.left_button_held;
-                    s.left_button_held = !hold_active;
+                    if s.left_button_held {
+                        drop(s);
+                        return;
+                    }
+                    s.left_button_held = true;
+                    s.left_button_drag_active = true;
                     drop(s);
-                    dispatch_input_action(app, move || {
-                        match injector::create_injector() {
-                            Ok(i) => {
-                                let result = if hold_active {
-                                    i.left_button_up()
-                                } else {
-                                    i.left_button_down()
-                                };
-                                if let Err(e) = result {
-                                    log::warn!("Left hold toggle injection failed: {}", e);
-                                }
+                    dispatch_input_action(app, move || match injector::create_injector() {
+                        Ok(i) => {
+                            let result = i.left_button_down();
+                            if let Err(e) = result {
+                                log::warn!("Left hold start injection failed: {}", e);
                             }
-                            Err(e) => log::warn!("Injector unavailable: {}", e),
                         }
+                        Err(e) => log::warn!("Injector unavailable: {}", e),
                     });
                 }
                 Some(GestureType::Fling) if s.config.mode == InputMode::Trackball => {
@@ -996,13 +1053,11 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
 
         InputEvent::Crown(_, payload) => {
             let lines = payload.delta as f64 / 100.0;
-            dispatch_input_action(app, move || {
-                match injector::create_injector() {
-                    Ok(i) => {
-                        let _ = i.scroll_vertical(lines);
-                    }
-                    Err(e) => log::warn!("Injector unavailable: {}", e),
+            dispatch_input_action(app, move || match injector::create_injector() {
+                Ok(i) => {
+                    let _ = i.scroll_vertical(lines);
                 }
+                Err(e) => log::warn!("Injector unavailable: {}", e),
             });
         }
     }
@@ -1024,12 +1079,17 @@ mod tests {
     }
 
     fn touch_payload(phase: TouchPhase, x: i16, y: i16) -> TouchPayload {
+        let pressure = if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
+            0
+        } else {
+            180
+        };
         TouchPayload {
             touch_id: 0,
             phase: phase as u8,
             x,
             y,
-            pressure: 0,
+            pressure,
             _pad: 0,
         }
     }
@@ -1051,15 +1111,27 @@ mod tests {
         let mut driver = PointingDeviceState::default();
         let mut cursor_x = 0.0;
 
-        assert_eq!(driver.handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Began, 0, 0)).is_some(), false);
+        assert_eq!(
+            driver
+                .handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Began, 0, 0))
+                .is_some(),
+            false
+        );
         for step in [8_i16, 16, 24, 32, 40] {
-            if let Some(output) = driver.handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Moved, step, 0)) {
+            if let Some(output) = driver.handle_touch(
+                DriverMode::Trackpad,
+                touch_payload(TouchPhase::Moved, step, 0),
+            ) {
                 cursor_x += output.dx;
             }
         }
 
         assert!(cursor_x > 0.03, "micro adjustments were lost: {}", cursor_x);
-        assert!(cursor_x < 0.25, "micro adjustments are still too aggressive: {}", cursor_x);
+        assert!(
+            cursor_x < 0.25,
+            "micro adjustments are still too aggressive: {}",
+            cursor_x
+        );
     }
 
     #[test]
@@ -1067,7 +1139,10 @@ mod tests {
         let cfg = PointingDeviceState::config_for(DriverMode::Trackpad);
         let slow = cfg.cursor_delta(0.02, 0.0).expect("slow motion");
         let fast = cfg.cursor_delta(1.0, 0.0).expect("fast motion");
-        assert!(slow.0 / 0.02 < fast.0 / 1.0, "slow motion should use a lower precision gain");
+        assert!(
+            slow.0 / 0.02 < fast.0 / 1.0,
+            "slow motion should use a lower precision gain"
+        );
     }
 
     #[test]
@@ -1075,19 +1150,40 @@ mod tests {
         let cfg = PointingDeviceState::config_for(DriverMode::Trackball);
         let slow = cfg.cursor_delta(0.07, 0.0).expect("slow motion");
         let fast = cfg.cursor_delta(1.0, 0.0).expect("fast motion");
-        assert!(slow.0 / 0.07 < fast.0 / 1.0, "slow motion should use a lower precision gain");
+        assert!(
+            slow.0 / 0.07 < fast.0 / 1.0,
+            "slow motion should use a lower precision gain"
+        );
     }
 
     #[test]
     fn trackpad_stops_immediately_when_surface_stops() {
         let mut state = trackpad_state();
 
-        assert_eq!(process_trackpad_touch(&mut state, header(1), touch_payload(TouchPhase::Began, 0, 0)), None);
-        let first = process_trackpad_touch(&mut state, header(2), touch_payload(TouchPhase::Moved, 120, 0));
-        let second = process_trackpad_touch(&mut state, header(3), touch_payload(TouchPhase::Moved, 120, 0));
+        assert_eq!(
+            process_trackpad_touch(
+                &mut state,
+                header(1),
+                touch_payload(TouchPhase::Began, 0, 0)
+            ),
+            None
+        );
+        let first = process_trackpad_touch(
+            &mut state,
+            header(2),
+            touch_payload(TouchPhase::Moved, 120, 0),
+        );
+        let second = process_trackpad_touch(
+            &mut state,
+            header(3),
+            touch_payload(TouchPhase::Moved, 120, 0),
+        );
 
         assert!(first.is_some(), "initial movement should move the cursor");
-        assert_eq!(second, None, "cursor must stop when surface delta becomes zero");
+        assert_eq!(
+            second, None,
+            "cursor must stop when surface delta becomes zero"
+        );
     }
 
     #[test]
@@ -1095,35 +1191,95 @@ mod tests {
         let mut state = trackpad_state();
         let mut cursor = (0.0, 0.0);
 
-        assert_eq!(process_trackpad_touch(&mut state, header(1), touch_payload(TouchPhase::Began, 0, 0)), None);
-        for (seq, (x, y)) in [(2_u16, (100_i16, 100_i16)), (3, (200, 200)), (4, (300, 300))] {
-            if let Some((dx, dy)) = process_trackpad_touch(&mut state, header(seq), touch_payload(TouchPhase::Moved, x, y)) {
+        assert_eq!(
+            process_trackpad_touch(
+                &mut state,
+                header(1),
+                touch_payload(TouchPhase::Began, 0, 0)
+            ),
+            None
+        );
+        for (seq, (x, y)) in [
+            (2_u16, (100_i16, 100_i16)),
+            (3, (200, 200)),
+            (4, (300, 300)),
+        ] {
+            if let Some((dx, dy)) = process_trackpad_touch(
+                &mut state,
+                header(seq),
+                touch_payload(TouchPhase::Moved, x, y),
+            ) {
                 cursor.0 += dx;
                 cursor.1 += dy;
             }
         }
 
         let ratio = cursor.0 / cursor.1;
-        assert!(ratio > 0.95 && ratio < 1.05, "diagonal skew too large: {:?}", cursor);
+        assert!(
+            ratio > 0.95 && ratio < 1.05,
+            "diagonal skew too large: {:?}",
+            cursor
+        );
     }
 
     #[test]
     fn trackball_touch_stops_after_end_even_if_position_is_held() {
         let mut state = trackball_state();
 
-        assert_eq!(process_trackball_touch(&mut state, header(1), touch_payload(TouchPhase::Began, 0, 0)), None);
-        assert!(process_trackball_touch(&mut state, header(2), touch_payload(TouchPhase::Moved, 64, 0)).is_some());
-        assert_eq!(process_trackball_touch(&mut state, header(3), touch_payload(TouchPhase::Ended, 64, 0)), None);
-        assert_eq!(process_trackball_touch(&mut state, header(4), touch_payload(TouchPhase::Began, 64, 0)), None);
+        assert_eq!(
+            process_trackball_touch(
+                &mut state,
+                header(1),
+                touch_payload(TouchPhase::Began, 0, 0)
+            ),
+            None
+        );
+        assert!(process_trackball_touch(
+            &mut state,
+            header(2),
+            touch_payload(TouchPhase::Moved, 64, 0)
+        )
+        .is_some());
+        assert_eq!(
+            process_trackball_touch(
+                &mut state,
+                header(3),
+                touch_payload(TouchPhase::Ended, 64, 0)
+            ),
+            None
+        );
+        assert_eq!(
+            process_trackball_touch(
+                &mut state,
+                header(4),
+                touch_payload(TouchPhase::Began, 64, 0)
+            ),
+            None
+        );
     }
 
     #[test]
     fn trackball_drops_out_of_order_touch_packet() {
         let mut state = trackball_state();
 
-        assert_eq!(process_trackball_touch(&mut state, header(10), touch_payload(TouchPhase::Began, 0, 0)), None);
-        let forward = process_trackball_touch(&mut state, header(11), touch_payload(TouchPhase::Moved, 64, 0));
-        let stale = process_trackball_touch(&mut state, header(10), touch_payload(TouchPhase::Moved, 32, 0));
+        assert_eq!(
+            process_trackball_touch(
+                &mut state,
+                header(10),
+                touch_payload(TouchPhase::Began, 0, 0)
+            ),
+            None
+        );
+        let forward = process_trackball_touch(
+            &mut state,
+            header(11),
+            touch_payload(TouchPhase::Moved, 64, 0),
+        );
+        let stale = process_trackball_touch(
+            &mut state,
+            header(10),
+            touch_payload(TouchPhase::Moved, 32, 0),
+        );
 
         assert!(forward.is_some(), "newer packet should move cursor");
         assert_eq!(stale, None, "stale packet must be ignored");

@@ -55,8 +55,8 @@ impl SmoothingProfile {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum InputMode {
-    #[default]
     Trackpad,
+    #[default]
     Trackball,
 }
 
@@ -72,7 +72,7 @@ impl Default for AppConfig {
     fn default() -> Self {
         Self {
             sensitivity: 1.0,
-            mode: InputMode::Trackpad,
+            mode: InputMode::Trackball,
             hand: Hand::Right,
             accel: AccelConfig::default(),
             kalman_q_pos: 0.1,

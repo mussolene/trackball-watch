@@ -318,16 +318,15 @@ struct TrackballRemoteView: View {
             sphereDiameter: currentVirtualTrackballDiameter
         )
         send(events)
+        if isPrimaryButtonHeld {
+            isPrimaryButtonHeld = false
+            lastGesture = "Hold Up"
+        }
     }
 
     private func handleTapGesture() {
         tapFeedback.impactOccurred(intensity: 0.7)
-        if isPrimaryButtonHeld {
-            isPrimaryButtonHeld = false
-            lastGesture = "Release"
-        } else {
-            lastGesture = "Tap"
-        }
+        lastGesture = "Tap"
         sendGesture(.tap)
     }
 
@@ -339,8 +338,8 @@ struct TrackballRemoteView: View {
 
     private func handleLongPressGesture() {
         impactFeedback.impactOccurred(intensity: 0.85)
-        isPrimaryButtonHeld.toggle()
-        lastGesture = isPrimaryButtonHeld ? "Hold Down" : "Hold Up"
+        isPrimaryButtonHeld = true
+        lastGesture = "Hold Down"
         sendGesture(.longPress)
     }
 
