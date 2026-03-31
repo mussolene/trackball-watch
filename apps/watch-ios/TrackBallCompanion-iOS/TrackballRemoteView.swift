@@ -453,7 +453,12 @@ private struct TrackballRemoteSurface: View {
 
     var body: some View {
         GeometryReader { geo in
-            let diameter = max(180, min(geo.size.width - 24, geo.size.height - 24, 420))
+            let haloScale: CGFloat = 1.22
+            let diameter = max(
+                180,
+                min((geo.size.width - 24) / haloScale, (geo.size.height - 24) / haloScale, 420)
+            )
+            let outerDiameter = diameter * haloScale
             ZStack {
                 RoundedRectangle(cornerRadius: 28)
                     .fill(Color.white.opacity(0.04))
@@ -477,7 +482,7 @@ private struct TrackballRemoteSurface: View {
                         fingerLocation: fingerLocation
                     )
                 }
-                .frame(width: diameter, height: diameter)
+                .frame(width: outerDiameter, height: outerDiameter)
                 .overlay {
                     Circle()
                         .fill(Color.clear)
@@ -509,7 +514,7 @@ private struct TrackballRemoteSurface: View {
                     DragGesture(minimumDistance: 0, coordinateSpace: .local)
                         .onChanged { value in
                             if !engine.isDragging,
-                               !isInsideTrackball(value.location, diameter: diameter) {
+                               !isInsideTrackball(value.location, diameter: diameter, outerDiameter: outerDiameter) {
                                 return
                             }
                             onChanged(value, diameter)
@@ -552,9 +557,9 @@ private struct TrackballRemoteSurface: View {
         }
     }
 
-    private func isInsideTrackball(_ location: CGPoint, diameter: CGFloat) -> Bool {
+    private func isInsideTrackball(_ location: CGPoint, diameter: CGFloat, outerDiameter: CGFloat) -> Bool {
         let radius = diameter * 0.5
-        let center = CGPoint(x: radius, y: radius)
+        let center = CGPoint(x: outerDiameter * 0.5, y: outerDiameter * 0.5)
         return hypot(location.x - center.x, location.y - center.y) <= radius
     }
 }
