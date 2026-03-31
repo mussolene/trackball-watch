@@ -558,12 +558,7 @@ pub fn run() {
 
 fn update_tray(app: &tauri::AppHandle, connected: bool, peer_addr: Option<&str>) {
     if let Some(tray) = app.tray_by_id("main-tray") {
-        #[cfg(target_os = "macos")]
-        let a11y_ok = injector::macos::MacOSInjector::has_accessibility_permission();
-        #[cfg(not(target_os = "macos"))]
-        let a11y_ok = true;
-
-        let mut tooltip = if connected {
+        let base = if connected {
             format!(
                 "TrackBall Watch — Connected{}",
                 peer_addr.map(|a| format!(" ({})", a)).unwrap_or_default()
@@ -571,10 +566,21 @@ fn update_tray(app: &tauri::AppHandle, connected: bool, peer_addr: Option<&str>)
         } else {
             "TrackBall Watch — Disconnected".to_string()
         };
-        #[cfg(target_os = "macos")]
-        if !a11y_ok {
-            tooltip.push_str(" — Accessibility OFF (cursor won’t move)");
-        }
+        let tooltip = {
+            #[cfg(target_os = "macos")]
+            {
+                let a11y_ok = injector::macos::MacOSInjector::has_accessibility_permission();
+                if !a11y_ok {
+                    format!("{base} — Accessibility OFF (cursor won’t move)")
+                } else {
+                    base
+                }
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                base
+            }
+        };
         let _ = tray.set_tooltip(Some(&tooltip));
     }
 }

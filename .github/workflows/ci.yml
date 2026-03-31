@@ -47,6 +47,16 @@ jobs:
         with:
           workspaces: apps/host-desktop/src-tauri
 
+      - name: Build frontend (Tauri requires ../dist for generate_context!)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/host-desktop/package-lock.json
+
+      - run: npm ci && npm run build
+        working-directory: apps/host-desktop
+
       - name: Check formatting
         working-directory: apps/host-desktop/src-tauri
         run: cargo fmt --check
@@ -111,11 +121,24 @@ jobs:
         with:
           workspaces: apps/host-desktop/src-tauri
 
+      - name: Build frontend (Tauri requires ../dist for generate_context!)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: apps/host-desktop/package-lock.json
+
+      - run: npm ci && npm run build
+        working-directory: apps/host-desktop
+
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin --locked
 
       - name: Run coverage
         working-directory: apps/host-desktop/src-tauri
+        env:
+          # tarpaulin compiles in an isolated workspace where ../dist may not exist
+          TAURI_CONFIG: '{"build":{"frontendDist":"."}}'
         run: cargo tarpaulin --out Xml --output-dir coverage
 
       - name: Upload to Codecov
@@ -135,6 +158,11 @@ jobs:
 
       - name: Prepare Local.xcconfig (not committed; required by XcodeGen project)
         run: cp apps/watch-ios/Local.xcconfig.example apps/watch-ios/Local.xcconfig
+
+      # actool compiles asset catalogs for watchsimulator; GitHub macOS images can lack a
+      # matching watchOS Simulator runtime for the bundled SDK (see "No simulator runtime version").
+      - name: Download watchOS platform (simulator runtime for asset catalogs)
+        run: xcodebuild -downloadPlatform watchOS
 
       - name: Build Apple watch target
         run: |
