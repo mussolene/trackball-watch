@@ -108,7 +108,7 @@ Apple Watch 7
 
 ### macOS
 
-1. Download [`trackball-watch-macos-universal.dmg`](../../releases/latest)
+1. Download [`trackball-watch-macos-universal.dmg`](https://github.com/mussolene/trackball-watch/releases/latest)
 2. Open DMG → drag **TrackBall Watch** to Applications
 3. Launch → **grant Accessibility permission** when prompted
    *(System Settings → Privacy & Security → Accessibility)*
@@ -116,7 +116,7 @@ Apple Watch 7
 
 ### Windows
 
-1. Download [`trackball-watch-windows-x64.msi`](../../releases/latest)
+1. Download [`trackball-watch-windows-x64.msi`](https://github.com/mussolene/trackball-watch/releases/latest)
 2. Run installer → allow the standard Windows security prompt if shown
 3. Allow firewall rule for UDP port **47474** when prompted
 4. App starts in system tray automatically
@@ -164,7 +164,7 @@ Open **Settings** from the system tray icon.
 | Mode | Trackball | Trackpad or Trackball |
 | Sensitivity | 100% | Overall cursor speed |
 | Curve | S-Curve | Linear / Quadratic / S-Curve (tanh) |
-| Friction | 92% | Trackball mode: coasting duration |
+| Friction | 85% | Trackball mode: coasting duration |
 
 **Built-in profiles:** Precise · Default · Fast · Linear
 
@@ -260,4 +260,4 @@ The intended differentiator is not "another remote mouse app". The intended diff
 
 ## License
 
-MIT © TrackBall Watch Contributors
+All rights reserved © TrackBall Watch Contributors
