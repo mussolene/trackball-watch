@@ -2,6 +2,11 @@
 //!
 //! Requires Accessibility permission: System Settings → Privacy & Security
 //! → Accessibility → enable TrackBall Watch.
+//!
+//! **Auto-hide Dock / menu bar:** macOS may not treat injected events like a physical mouse.
+//! We use a `CGEventSource` in `kCGEventSourceStateHIDSystemState`. If the Dock still does not
+//! reveal, try `TRACKBALL_CG_EVENT_TAP=session`, or turn off “Automatically hide and show Dock”
+//! in System Settings → Desktop & Dock, or use the keyboard shortcut to show the Dock (e.g. ⌃F3).
 
 use crate::injector::platform::{InjectorError, InputInjector};
 
@@ -42,13 +47,17 @@ mod imp {
     const K_CGMOUSE_BUTTON_RIGHT: u32 = 1;
     const K_CGMOUSE_EVENT_CLICK_STATE: u32 = 1;
 
-    // kCGHIDEventTap = 0
+    // CGEventTapLocation (CGEvent.h)
     const K_CGHIDEVENT_TAP: u32 = 0;
+    const K_CGSESSION_EVENT_TAP: u32 = 1;
+    // CGEventSourceStateID — use HID system state so events look closer to hardware (Dock / menu bar).
+    const K_CGEVENT_SOURCE_STATE_HID_SYSTEM: u32 = 1;
     // kCGScrollEventUnitLine = 1
     const K_CGSCROLL_EVENT_UNIT_LINE: u32 = 1;
 
     #[link(name = "CoreGraphics", kind = "framework")]
     extern "C" {
+        fn CGEventSourceCreate(state_id: u32) -> CGEventSourceRef;
         fn CGEventCreate(source: CGEventSourceRef) -> CGEventRef;
         fn CGEventCreateMouseEvent(
             source: CGEventSourceRef,
@@ -98,6 +107,27 @@ mod imp {
         STATE.get_or_init(|| Mutex::new(false))
     }
 
+    fn hid_system_event_source() -> CGEventSourceRef {
+        static SOURCE: OnceLock<usize> = OnceLock::new();
+        let ptr = *SOURCE.get_or_init(|| unsafe {
+            let s = CGEventSourceCreate(K_CGEVENT_SOURCE_STATE_HID_SYSTEM);
+            if s.is_null() {
+                0
+            } else {
+                s as usize
+            }
+        });
+        ptr as CGEventSourceRef
+    }
+
+    /// `kCGHIDEventTap` (default) or `kCGSessionEventTap` if `TRACKBALL_CG_EVENT_TAP=session`.
+    fn cg_event_post_tap() -> u32 {
+        match std::env::var("TRACKBALL_CG_EVENT_TAP").as_deref() {
+            Ok("session") => K_CGSESSION_EVENT_TAP,
+            _ => K_CGHIDEVENT_TAP,
+        }
+    }
+
     pub struct MacOSInjector;
 
     impl MacOSInjector {
@@ -135,14 +165,15 @@ mod imp {
 
         fn post_mouse_event(&self, event_type: u32, x: f64, y: f64, button: u32) {
             unsafe {
+                let source = hid_system_event_source();
                 let event = CGEventCreateMouseEvent(
-                    std::ptr::null_mut(),
+                    source,
                     event_type,
                     CGPoint { x, y },
                     button,
                 );
                 if !event.is_null() {
-                    CGEventPost(K_CGHIDEVENT_TAP, event);
+                    CGEventPost(cg_event_post_tap(), event);
                     CFRelease(event);
                 }
             }
@@ -151,15 +182,16 @@ mod imp {
         fn post_click_event(&self, event_type: u32, button: u32, click_state: i64) {
             let (x, y) = current_mouse_position();
             unsafe {
+                let source = hid_system_event_source();
                 let event = CGEventCreateMouseEvent(
-                    std::ptr::null_mut(),
+                    source,
                     event_type,
                     CGPoint { x, y },
                     button,
                 );
                 if !event.is_null() {
                     CGEventSetIntegerValueField(event, K_CGMOUSE_EVENT_CLICK_STATE, click_state);
-                    CGEventPost(K_CGHIDEVENT_TAP, event);
+                    CGEventPost(cg_event_post_tap(), event);
                     CFRelease(event);
                 }
             }
@@ -279,8 +311,9 @@ mod imp {
 
         fn scroll_vertical(&self, lines: f64) -> Result<(), InjectorError> {
             unsafe {
+                let source = hid_system_event_source();
                 let event = CGEventCreateScrollWheelEvent2(
-                    std::ptr::null_mut(),
+                    source,
                     K_CGSCROLL_EVENT_UNIT_LINE,
                     1,
                     -(lines as i32),
@@ -288,7 +321,7 @@ mod imp {
                     0,
                 );
                 if !event.is_null() {
-                    CGEventPost(K_CGHIDEVENT_TAP, event);
+                    CGEventPost(cg_event_post_tap(), event);
                     CFRelease(event);
                 }
             }
