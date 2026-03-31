@@ -163,7 +163,8 @@ jobs:
           api-key-id: ${{ secrets.APPSTORE_API_KEY_ID }}
           api-private-key: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
 
-      - name: Archive Apple mobile bundle
+      - name: Archive Apple mobile bundle (signed)
+        if: env.HAS_APPLE_DIST_CERT == 'true'
         run: |
           xcodebuild archive \
             -project apps/watch-ios/TrackBallWatch.xcodeproj \
@@ -172,6 +173,12 @@ jobs:
             -archivePath /tmp/trackball-apple-mobile.xcarchive \
             CODE_SIGN_IDENTITY="iPhone Distribution" \
             PRODUCT_BUNDLE_IDENTIFIER=com.trackball-watch.app
+
+      - name: Skip Apple mobile archive (no distribution signing secrets)
+        if: env.HAS_APPLE_DIST_CERT != 'true'
+        run: |
+          echo "Skipping iOS archive: set repo secrets APPLE_DIST_CERT_P12 (+ password) to build a signed archive."
+          echo "Desktop release (DMG/MSI) is unaffected; this job is optional until Apple signing is configured."
 
       - name: Upload to TestFlight
         if: env.HAS_APPSTORE_API_KEY == 'true'
