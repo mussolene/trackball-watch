@@ -7,6 +7,7 @@ import Combine
 struct TrackballView: View {
     @EnvironmentObject var sessionManager: WatchSessionManager
     @StateObject private var engine = TrackballInteractionEngine()
+    @State private var isStreamingCoastTouch = false
 
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
@@ -19,18 +20,18 @@ struct TrackballView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
             .onReceive(tick) { now in
-                let feedback = sessionManager.coastingState
-                let delta = engine.tickPhysics(
+                _ = engine.tickPhysics(
                     now: now,
                     ballDiameter: d,
-                    friction: sessionManager.trackballFriction,
-                    coastingFeedback: TrackballCoastingFeedback(
-                        active: feedback.active,
-                        vx: feedback.vx,
-                        vy: feedback.vy
-                    )
+                    friction: sessionManager.trackballFriction
                 )
-                _ = delta
+                if !engine.isDragging && engine.isCoasting {
+                    send([engine.currentTouchEvent(phase: .moved, pressure: 0)])
+                    isStreamingCoastTouch = true
+                } else if isStreamingCoastTouch {
+                    send([engine.currentTouchEvent(phase: .ended, pressure: 0)])
+                    isStreamingCoastTouch = false
+                }
             }
         }
     }
@@ -85,19 +86,18 @@ struct TrackballView: View {
     }
 
     private func onDragChanged(_ value: DragGesture.Value, diameter: CGFloat) {
-        let outer = diameter * 1.34
-        let center = CGPoint(x: outer / 2, y: outer / 2)
-        send(
-            engine.handleDragChanged(
-                location: value.location,
-                sphereCenter: center,
-                sphereDiameter: diameter
-            )
+        let center = CGPoint(x: diameter / 2, y: diameter / 2)
+        let events = engine.handleDragChanged(
+            location: value.location,
+            sphereCenter: center,
+            sphereDiameter: diameter
         )
+        send(events)
     }
 
     private func onDragEnded(_ value: DragGesture.Value, diameter: CGFloat) {
-        send(engine.handleDragEnded(location: value.location, sphereDiameter: diameter))
+        let events = engine.handleDragEnded(location: value.location, sphereDiameter: diameter)
+        send(events)
     }
 
     private func send(_ events: [TrackballEngineEvent]) {
@@ -114,6 +114,7 @@ struct TrackballView: View {
                     )
                 )
                 if phase == .began {
+                    isStreamingCoastTouch = false
                     WKInterfaceDevice.current().play(.start)
                 }
             case .tap:
@@ -125,9 +126,9 @@ struct TrackballView: View {
             case .longPress:
                 sessionManager.send(TBPPacket.gesture(type: .longPress, fingers: 1, param1: 0, param2: 0))
                 WKInterfaceDevice.current().play(.failure)
-            case let .fling(vx, vy):
-                sessionManager.send(TBPPacket.gesture(type: .fling, fingers: 1, param1: vx, param2: vy))
-                WKInterfaceDevice.current().play(.directionUp)
+            case .fling:
+                // Fling gesture packets are no longer used for cursor motion.
+                break
             }
         }
     }

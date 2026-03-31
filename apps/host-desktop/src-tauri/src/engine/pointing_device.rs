@@ -39,12 +39,16 @@ const TRACKBALL_BALL_CONFIG: VirtualBallConfig = VirtualBallConfig {
 pub struct PointingDeviceState {
     last_raw_x: f64,
     last_raw_y: f64,
+    last_packet_x: i16,
+    last_packet_y: i16,
 }
 
 impl PointingDeviceState {
     pub fn reset(&mut self) {
         self.last_raw_x = 0.0;
         self.last_raw_y = 0.0;
+        self.last_packet_x = 0;
+        self.last_packet_y = 0;
     }
 
     pub fn handle_touch(
@@ -68,13 +72,23 @@ impl PointingDeviceState {
         if phase == TouchPhase::Began {
             self.last_raw_x = x;
             self.last_raw_y = y;
+            self.last_packet_x = payload.x;
+            self.last_packet_y = payload.y;
             return None;
         }
 
-        let dx = x - self.last_raw_x;
-        let dy = y - self.last_raw_y;
+        let (dx, dy) = match mode {
+            DriverMode::Trackpad => (x - self.last_raw_x, y - self.last_raw_y),
+            DriverMode::Trackball => {
+                let raw_dx = wrapped_i16_delta(payload.x, self.last_packet_x) as f64;
+                let raw_dy = wrapped_i16_delta(payload.y, self.last_packet_y) as f64;
+                (raw_dx / config.packet_scale, raw_dy / config.packet_scale)
+            }
+        };
         self.last_raw_x = x;
         self.last_raw_y = y;
+        self.last_packet_x = payload.x;
+        self.last_packet_y = payload.y;
 
         // Trackball: same speed-dependent gain as trackpad (slow = precise, fast = travel),
         // so finger roll maps to cursor like a mechanical ball, not raw surface deltas.
@@ -95,6 +109,16 @@ impl PointingDeviceState {
             DriverMode::Trackball => TRACKBALL_BALL_CONFIG,
         }
     }
+}
+
+fn wrapped_i16_delta(curr: i16, prev: i16) -> i32 {
+    let mut d = i32::from(curr) - i32::from(prev);
+    if d > i32::from(i16::MAX) {
+        d -= 1 << 16;
+    } else if d < i32::from(i16::MIN) {
+        d += 1 << 16;
+    }
+    d
 }
 
 #[cfg(test)]
@@ -150,5 +174,25 @@ mod tests {
         let second = state.handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Moved, 120, 0));
         assert!(first.is_some());
         assert!(second.is_none());
+    }
+
+    #[test]
+    fn trackball_wraps_packet_boundary_without_cursor_jump() {
+        let mut state = PointingDeviceState::default();
+        assert_eq!(
+            state
+                .handle_touch(
+                    DriverMode::Trackball,
+                    touch_payload(TouchPhase::Began, i16::MAX - 2, 0)
+                )
+                .is_some(),
+            false
+        );
+        let output = state
+            .handle_touch(DriverMode::Trackball, touch_payload(TouchPhase::Moved, i16::MIN + 2, 0))
+            .expect("wrapped movement expected");
+        assert!(output.dx > 0.01, "wrapped dx must stay positive and small, got {}", output.dx);
+        assert!(output.dx < 0.2, "wrapped dx must not create a large jump, got {}", output.dx);
+        assert!(output.dy.abs() < 1e-9);
     }
 }

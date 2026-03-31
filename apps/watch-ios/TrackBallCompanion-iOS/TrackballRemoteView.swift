@@ -14,6 +14,7 @@ struct TrackballRemoteView: View {
     @State private var lastGesture = "None"
     @State private var visibleFingerLocation: CGPoint?
     @State private var currentTrackballDiameter: CGFloat = 300
+    @State private var isStreamingCoastTouch = false
 
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -72,17 +73,18 @@ struct TrackballRemoteView: View {
             }
         }
         .onReceive(tick) { now in
-            let feedback = relay.coastingState
             _ = engine.tickPhysics(
                 now: now,
                 ballDiameter: currentTrackballDiameter,
-                friction: localTrackballFriction,
-                coastingFeedback: TrackballCoastingFeedback(
-                    active: feedback.active,
-                    vx: feedback.vx,
-                    vy: feedback.vy
-                )
+                friction: localTrackballFriction
             )
+            if !engine.isDragging && engine.isCoasting {
+                send([engine.currentTouchEvent(phase: .moved, pressure: 0)])
+                isStreamingCoastTouch = true
+            } else if isStreamingCoastTouch {
+                send([engine.currentTouchEvent(phase: .ended, pressure: 0)])
+                isStreamingCoastTouch = false
+            }
         }
     }
 
@@ -313,14 +315,14 @@ struct TrackballRemoteView: View {
             case let .touch(phase, x, y, pressure):
                 if phase == .began {
                     impactFeedback.impactOccurred(intensity: 0.45)
+                    isStreamingCoastTouch = false
                 }
                 sendTouch(phase: phase, x: x, y: y, pressure: pressure)
             case .tap, .doubleTap, .longPress:
                 break
-            case let .fling(vx, vy):
-                impactFeedback.impactOccurred(intensity: 0.7)
-                lastGesture = "Fling"
-                sendFling(vx: vx, vy: vy)
+            case .fling:
+                // Fling gesture packets are no longer used for cursor motion.
+                break
             }
         }
     }
@@ -329,12 +331,6 @@ struct TrackballRemoteView: View {
         guard sendToDesktop else { return }
         ensureDesktopRelayReady()
         relay.relay(packetBuilder.touch(phase: companionTouchPhase(phase), x: x, y: y, pressure: pressure))
-    }
-
-    private func sendFling(vx: Int16, vy: Int16) {
-        guard sendToDesktop else { return }
-        ensureDesktopRelayReady()
-        relay.relay(packetBuilder.fling(vx: vx, vy: vy))
     }
 
     private func sendGesture(_ gesture: DebugGestureType) {

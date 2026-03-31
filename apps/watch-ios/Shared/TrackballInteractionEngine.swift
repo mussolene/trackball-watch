@@ -36,18 +36,23 @@ final class TrackballInteractionEngine: ObservableObject {
     private var dragStart: CGPoint = .zero
     private var dragStartTime: Date = .distantPast
     private var lastDragPoint: CGPoint = .zero
+    private var lastAcceptedDragDelta: CGPoint = .zero
+    private var lastAcceptedDragDt: Double = 1.0 / 60.0
+    /// Virtual-plane velocity of contact point (points per second).
+    private var coastingPlaneVelocity: CGPoint = .zero
     /// Last time a drag sample passed the noise gate and updated ω (rolling).
     private var lastRollingDragEventTime: Date = .distantPast
     private var lastOmegaSampleTime: Date = .distantPast
     private var lastTick: Date = .now
     private var lastTapAt: Date = .distantPast
-    private let virtualContactPacketScale: CGFloat = 96.0
+    /// Scale factor from virtual-plane units to TBP Int16 range.
+    /// Smaller value → больше виртуальный стол до насыщения Int16.
+    private let virtualContactPacketScale: CGFloat = 32.0
 
     /// Keep `x * virtualContactPacketScale` within Int16 range for TBP payloads.
     private var maxVirtualContact: CGFloat {
         CGFloat(Int16.max) / virtualContactPacketScale
     }
-    private let flingPacketScale: Double = 2.35
     private let tapMaxDistance: CGFloat = 8.0
     private let tapMaxDuration: TimeInterval = 0.28
     private let doubleTapWindow: TimeInterval = 0.32
@@ -56,6 +61,9 @@ final class TrackballInteractionEngine: ObservableObject {
     private let dragNoiseThreshold: CGFloat = 0.22
     private let cursorMotionGain: Double = 2.4
     private let dragAngularVelocityBlend: Double = 0.35
+    private let dragPlaneVelocityBlend: Double = 0.35
+    /// Keep per-packet axis step safely below wrap ambiguity threshold (Int16 ring).
+    private let maxPacketDeltaPerTickRaw: CGFloat = 12_000
 
     func resetInteractionState() {
         isDragging = false
@@ -64,6 +72,9 @@ final class TrackballInteractionEngine: ObservableObject {
         pressureByte = 180
         stoppedCoastByTouch = false
         lastDragPoint = .zero
+        lastAcceptedDragDelta = .zero
+        lastAcceptedDragDt = 1.0 / 60.0
+        coastingPlaneVelocity = .zero
         dragStart = .zero
         lastRollingDragEventTime = .distantPast
         lastOmegaSampleTime = .distantPast
@@ -91,6 +102,9 @@ final class TrackballInteractionEngine: ObservableObject {
             dragStart = point
             dragStartTime = now
             lastDragPoint = point
+            lastAcceptedDragDelta = .zero
+            lastAcceptedDragDt = 1.0 / 60.0
+            coastingPlaneVelocity = .zero
             angularVelocity = .zero
             pressureByte = 180
             virtualContactPoint = .zero
@@ -112,6 +126,20 @@ final class TrackballInteractionEngine: ObservableObject {
 
         let dt = max(1e-4, min(0.25, now.timeIntervalSince(lastOmegaSampleTime)))
         lastOmegaSampleTime = now
+        lastAcceptedDragDelta = CGPoint(x: dx, y: dy)
+        lastAcceptedDragDt = dt
+        let measuredPlaneVelocity = CGPoint(
+            x: (dx * cursorMotionGain) / dt,
+            y: (dy * cursorMotionGain) / dt
+        )
+        if hypot(coastingPlaneVelocity.x, coastingPlaneVelocity.y) > 1e-4 {
+            coastingPlaneVelocity = CGPoint(
+                x: coastingPlaneVelocity.x * (1.0 - dragPlaneVelocityBlend) + measuredPlaneVelocity.x * dragPlaneVelocityBlend,
+                y: coastingPlaneVelocity.y * (1.0 - dragPlaneVelocityBlend) + measuredPlaneVelocity.y * dragPlaneVelocityBlend
+            )
+        } else {
+            coastingPlaneVelocity = measuredPlaneVelocity
+        }
         let measuredAngularVelocity = angularVelocityFromPlaneDisplacement(
             dx: Double(dx),
             dy: Double(dy),
@@ -141,10 +169,11 @@ final class TrackballInteractionEngine: ObservableObject {
     ) -> [TrackballEngineEvent] {
         defer { isDragging = false }
 
+        let now = Date()
         let point = location
         let tapDistanceThreshold = max(tapMaxDistance, sphereDiameter * 0.08)
         let distance = hypot(point.x - dragStart.x, point.y - dragStart.y)
-        let duration = Date().timeIntervalSince(dragStartTime)
+        let duration = now.timeIntervalSince(dragStartTime)
 
         if stoppedCoastByTouch {
             stoppedCoastByTouch = false
@@ -169,16 +198,64 @@ final class TrackballInteractionEngine: ObservableObject {
 
         let radius = Double(sphereDiameter / 2.0)
         if radius > 0 {
-            // Plane velocity from rolling in UIKit coordinates: v_x = ω_y R, v_y = ω_x R.
-            let linearVX = CGFloat(angularVelocity.y * radius * cursorMotionGain)
-            let linearVY = CGFloat(angularVelocity.x * radius * cursorMotionGain)
+            if hypot(coastingPlaneVelocity.x, coastingPlaneVelocity.y) <= 0.12,
+               hypot(lastAcceptedDragDelta.x, lastAcceptedDragDelta.y) >= dragNoiseThreshold {
+                // Start coast from the latest accepted rolling direction, not from lift-off noise.
+                angularVelocity = angularVelocityFromPlaneDisplacement(
+                    dx: Double(lastAcceptedDragDelta.x),
+                    dy: Double(lastAcceptedDragDelta.y),
+                    radius: radius,
+                    dt: max(1e-4, min(0.25, lastAcceptedDragDt))
+                )
+                coastingPlaneVelocity = CGPoint(
+                    x: (lastAcceptedDragDelta.x * cursorMotionGain) / max(1e-4, min(0.25, lastAcceptedDragDt)),
+                    y: (lastAcceptedDragDelta.y * cursorMotionGain) / max(1e-4, min(0.25, lastAcceptedDragDt))
+                )
+            }
+
+            // Recover terminal velocity from the final drag segment in case the last onChanged
+            // sample was skipped by gesture/event timing right before lift-off.
+            let endDX = point.x - lastDragPoint.x
+            let endDY = point.y - lastDragPoint.y
+            let endDistance = hypot(endDX, endDY)
+            let sampleAge = now.timeIntervalSince(lastOmegaSampleTime)
+            // Ignore tiny lift-off jitter; only recover if the last real drag sample is stale.
+            if hypot(coastingPlaneVelocity.x, coastingPlaneVelocity.y) <= 0.12,
+               hypot(lastAcceptedDragDelta.x, lastAcceptedDragDelta.y) < dragNoiseThreshold,
+               endDistance >= dragNoiseThreshold,
+               sampleAge > 0.012 {
+                let endDt = max(1e-4, min(0.25, now.timeIntervalSince(lastOmegaSampleTime)))
+                let terminalOmega = angularVelocityFromPlaneDisplacement(
+                    dx: Double(endDX),
+                    dy: Double(endDY),
+                    radius: radius,
+                    dt: endDt
+                )
+                if simd_length(angularVelocity) > 1e-4 {
+                    angularVelocity = angularVelocity * (1.0 - dragAngularVelocityBlend)
+                        + terminalOmega * dragAngularVelocityBlend
+                } else {
+                    angularVelocity = terminalOmega
+                }
+                coastingPlaneVelocity = CGPoint(
+                    x: (endDX * cursorMotionGain) / endDt,
+                    y: (endDY * cursorMotionGain) / endDt
+                )
+            }
+
+            let linearVX = coastingPlaneVelocity.x
+            let linearVY = coastingPlaneVelocity.y
             if hypot(linearVX, linearVY) > 0.12 {
-                return [touchEvent(.ended), flingEvent(vx: linearVX, vy: linearVY)]
+                // Keep streaming virtual contact coordinates during coast.
+                // The finger is no longer touching, but the ball is still rolling on the plane.
+                return []
             }
             angularVelocity = .zero
+            coastingPlaneVelocity = .zero
             return [touchEvent(.ended)]
         } else {
             angularVelocity = .zero
+            coastingPlaneVelocity = .zero
             return [touchEvent(.ended)]
         }
     }
@@ -195,9 +272,6 @@ final class TrackballInteractionEngine: ObservableObject {
         // During drag, contact movement is integrated directly in handleDragChanged so that
         // cursor movement stays exactly in lockstep with visible sphere rotation.
         if isDragging {
-            if now.timeIntervalSince(lastRollingDragEventTime) > 0.08 {
-                angularVelocity = .zero
-            }
             return .zero
         }
 
@@ -213,20 +287,37 @@ final class TrackballInteractionEngine: ObservableObject {
             }
         }
 
-        let speed = simd_length(angularVelocity)
-        guard speed > 0.01 else {
+        let planeSpeed = hypot(coastingPlaneVelocity.x, coastingPlaneVelocity.y)
+        guard planeSpeed > 0.01 else {
+            coastingPlaneVelocity = .zero
             angularVelocity = .zero
             return .zero
         }
 
         let radius = Double(ballDiameter / 2.0)
-        let delta = planeDisplacementFromOmega(angularVelocity, radius: radius, dt: dt)
+        var delta = CGPoint(
+            x: coastingPlaneVelocity.x * dt,
+            y: coastingPlaneVelocity.y * dt
+        )
+        delta = clampDeltaForPacketContinuity(delta)
         virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + delta.x)
         virtualContactPoint.y = clampVirtualAxis(virtualContactPoint.y + delta.y)
 
         let clampedFriction = max(0.001, min(0.999, friction))
         let damping = -log(clampedFriction) * 60.0
-        angularVelocity *= exp(-damping * dt)
+        let decay = exp(-damping * dt)
+        coastingPlaneVelocity.x *= decay
+        coastingPlaneVelocity.y *= decay
+
+        if radius > 1e-6 {
+            angularVelocity = SIMD3<Double>(
+                Double(coastingPlaneVelocity.y) / (radius * cursorMotionGain),
+                Double(coastingPlaneVelocity.x) / (radius * cursorMotionGain),
+                0
+            )
+        } else {
+            angularVelocity = .zero
+        }
 
         let currentSpeed = simd_length(angularVelocity)
         if currentSpeed > 0.01 {
@@ -288,15 +379,18 @@ final class TrackballInteractionEngine: ObservableObject {
         return [.tap]
     }
 
-    private func flingEvent(vx: CGFloat, vy: CGFloat) -> TrackballEngineEvent {
-        let packetVX = Int16(clamping: Int((Double(vx) * flingPacketScale).rounded()))
-        let packetVY = Int16(clamping: Int((Double(vy) * flingPacketScale).rounded()))
-        return .fling(vx: packetVX, vy: packetVY)
-    }
-
     private func clampVirtualAxis(_ value: CGFloat) -> CGFloat {
         guard value.isFinite else { return 0 }
+        // No toroidal wrap: keep contact continuous without boundary jumps.
         return max(min(value, maxVirtualContact), -maxVirtualContact)
+    }
+
+    private func clampDeltaForPacketContinuity(_ delta: CGPoint) -> CGPoint {
+        let maxAxisStep = maxPacketDeltaPerTickRaw / virtualContactPacketScale
+        return CGPoint(
+            x: max(min(delta.x, maxAxisStep), -maxAxisStep),
+            y: max(min(delta.y, maxAxisStep), -maxAxisStep)
+        )
     }
 
     /// No-slip rolling on the virtual screen-plane in UIKit coordinates:
