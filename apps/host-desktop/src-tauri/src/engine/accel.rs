@@ -137,12 +137,20 @@ mod tests {
     fn apply_curve_2d_preserves_direction() {
         let cfg = AccelConfig::default();
         // Magnitude-preserving: direction should be unchanged
-        let (ox, oy) = apply_curve_2d(3.0, -4.0, &cfg);  // magnitude = 5
+        let (ox, oy) = apply_curve_2d(3.0, -4.0, &cfg); // magnitude = 5
         let out_mag = (ox * ox + oy * oy).sqrt();
         let expected_mag = apply_curve(5.0, &cfg);
-        assert!((out_mag - expected_mag).abs() < 1e-9, "magnitude: {} vs {}", out_mag, expected_mag);
+        assert!(
+            (out_mag - expected_mag).abs() < 1e-9,
+            "magnitude: {} vs {}",
+            out_mag,
+            expected_mag
+        );
         // Direction preserved: ratio should match input
-        assert!((ox / oy - 3.0 / -4.0).abs() < 1e-9, "direction not preserved");
+        assert!(
+            (ox / oy - 3.0 / -4.0).abs() < 1e-9,
+            "direction not preserved"
+        );
     }
 
     #[test]

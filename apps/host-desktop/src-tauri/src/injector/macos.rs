@@ -9,14 +9,14 @@ use crate::injector::platform::{InjectorError, InputInjector};
 mod imp {
     use super::*;
     use crate::trace_file;
+    use core_foundation::base::TCFType;
     use core_foundation::boolean::CFBoolean;
     use core_foundation::dictionary::CFDictionary;
-    use core_foundation::base::TCFType;
     use core_foundation::string::CFString;
     use std::ffi::c_void;
     use std::sync::{Mutex, OnceLock};
 
-    const DEFAULT_MOTION_DEBUG: bool = true;
+    const DEFAULT_MOTION_DEBUG: bool = false;
 
     type CGEventRef = *mut c_void;
     type CGEventSourceRef = *mut c_void;
@@ -121,15 +121,15 @@ mod imp {
             }
             let key = CFString::new("AXTrustedCheckOptionPrompt");
             let opts = CFDictionary::from_CFType_pairs(&[(key, CFBoolean::true_value())]);
-            unsafe {
-                AXIsProcessTrustedWithOptions(opts.as_concrete_TypeRef().cast::<c_void>())
-            }
+            unsafe { AXIsProcessTrustedWithOptions(opts.as_concrete_TypeRef().cast::<c_void>()) }
         }
 
         /// Open System Settings → Privacy & Security → Accessibility.
         pub fn open_accessibility_settings() {
             let _ = std::process::Command::new("open")
-                .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+                .arg(
+                    "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+                )
                 .spawn();
         }
 

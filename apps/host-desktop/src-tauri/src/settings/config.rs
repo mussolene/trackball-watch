@@ -31,11 +31,11 @@ pub struct AppConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum SmoothingProfile {
-    Precise,     // min_cutoff=2.0, beta=0.008  — precise work, documents (~80ms lag)
+    Precise, // min_cutoff=2.0, beta=0.008  — precise work, documents (~80ms lag)
     #[default]
-    Balanced,    // min_cutoff=5.0, beta=0.025  — general use (~32ms lag)
-    Responsive,  // min_cutoff=12.0, beta=0.08  — fast scrolling, gaming (~13ms lag)
-    Custom,      // uses one_euro_min_cutoff / one_euro_beta directly
+    Balanced, // min_cutoff=5.0, beta=0.025  — general use (~32ms lag)
+    Responsive, // min_cutoff=12.0, beta=0.08  — fast scrolling, gaming (~13ms lag)
+    Custom,  // uses one_euro_min_cutoff / one_euro_beta directly
 }
 
 impl SmoothingProfile {
@@ -43,10 +43,10 @@ impl SmoothingProfile {
     /// `custom_mc` and `custom_beta` are used only when `profile == Custom`.
     pub fn params(self, custom_mc: f64, custom_beta: f64) -> (f64, f64) {
         match self {
-            Self::Precise    => (2.0, 0.008),
-            Self::Balanced   => (5.0, 0.025),
+            Self::Precise => (2.0, 0.008),
+            Self::Balanced => (5.0, 0.025),
             Self::Responsive => (12.0, 0.08),
-            Self::Custom     => (custom_mc, custom_beta),
+            Self::Custom => (custom_mc, custom_beta),
         }
     }
 }

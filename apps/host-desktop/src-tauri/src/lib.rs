@@ -22,7 +22,7 @@ use protocol::packets::{GestureType, TouchPhase};
 use server::udp::{InputEvent, UdpServer};
 use settings::config::{AppConfig, InputMode};
 
-const DEFAULT_MOTION_DEBUG: bool = true;
+const DEFAULT_MOTION_DEBUG: bool = false;
 
 /// Shared application state (input pipeline + connection info).
 struct AppState {
@@ -138,11 +138,7 @@ fn save_config(
         s.trackball = TrackballState::new(config.trackball_friction, 0.5);
         s.config = config;
         if let Some(tx) = s.udp_tx.clone() {
-            pending_mode_push = Some((
-                tx,
-                s.config.mode,
-                s.config.trackball_friction,
-            ));
+            pending_mode_push = Some((tx, s.config.mode, s.config.trackball_friction));
         }
     }
     if let Some((tx, mode, friction)) = pending_mode_push {
@@ -235,11 +231,7 @@ fn get_profiles() -> Vec<settings::profiles::Profile> {
 fn push_mode(state: tauri::State<Arc<Mutex<AppState>>>) -> Result<(), String> {
     let s = state.lock().unwrap();
     if let Some(tx) = &s.udp_tx {
-        send_mode_packet(
-            tx,
-            s.config.mode,
-            s.config.trackball_friction,
-        )?;
+        send_mode_packet(tx, s.config.mode, s.config.trackball_friction)?;
     }
     Ok(())
 }
@@ -814,10 +806,7 @@ fn process_trackball_touch(
     // Treat deltas as physical rolling displacement, not as a noisy pointer input stream.
     let output = s
         .pointing_device
-        .handle_touch(DriverMode::Trackball, payload);
-    let Some(output) = output else {
-        return None;
-    };
+        .handle_touch(DriverMode::Trackball, payload)?;
     if s.motion_debug {
         log_motion_telemetry("trackball", output.telemetry);
         trace_file::append_line(format!(
@@ -868,13 +857,9 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
             // Ensure watch mode reflects current desktop mode right after link-up.
             let mode_push = {
                 let s = state.lock().unwrap();
-                s.udp_tx.clone().map(|tx| {
-                    (
-                        tx,
-                        s.config.mode,
-                        s.config.trackball_friction,
-                    )
-                })
+                s.udp_tx
+                    .clone()
+                    .map(|tx| (tx, s.config.mode, s.config.trackball_friction))
             };
             if let Some((tx, mode, friction)) = mode_push {
                 let _ = send_mode_packet(&tx, mode, friction);

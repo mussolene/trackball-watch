@@ -3,7 +3,7 @@ use crate::trace_file;
 
 use super::virtual_ball::{MotionDecision, MotionTelemetry, VirtualBallConfig};
 
-const DEFAULT_MOTION_DEBUG: bool = true;
+const DEFAULT_MOTION_DEBUG: bool = false;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriverMode {
@@ -192,32 +192,78 @@ mod tests {
     #[test]
     fn trackball_touch_emits_fractional_cursor_delta() {
         let mut state = PointingDeviceState::default();
-        assert_eq!(state.handle_touch(DriverMode::Trackball, touch_payload(TouchPhase::Began, 0, 0)).is_some(), false);
+        assert_eq!(
+            state
+                .handle_touch(
+                    DriverMode::Trackball,
+                    touch_payload(TouchPhase::Began, 0, 0)
+                )
+                .is_some(),
+            false
+        );
         let output = state
-            .handle_touch(DriverMode::Trackball, touch_payload(TouchPhase::Moved, 2, 0))
+            .handle_touch(
+                DriverMode::Trackball,
+                touch_payload(TouchPhase::Moved, 2, 0),
+            )
             .expect("fractional movement expected");
-        assert!(output.dx > 0.01 && output.dx < 0.02, "unexpected dx: {}", output.dx);
+        assert!(
+            output.dx > 0.01 && output.dx < 0.02,
+            "unexpected dx: {}",
+            output.dx
+        );
         assert!(output.dy.abs() < 1e-9);
     }
 
     #[test]
     fn trackpad_uses_same_virtual_ball_kinematics_without_inertia() {
         let mut state = PointingDeviceState::default();
-        assert_eq!(state.handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Began, 0, 0)).is_some(), false);
+        assert_eq!(
+            state
+                .handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Began, 0, 0))
+                .is_some(),
+            false
+        );
         let output = state
-            .handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Moved, 200, 0))
+            .handle_touch(
+                DriverMode::Trackpad,
+                touch_payload(TouchPhase::Moved, 200, 0),
+            )
             .expect("surface movement expected");
-        assert!(output.dx > 0.2 && output.dx < 0.5, "unexpected dx: {}", output.dx);
+        assert!(
+            output.dx > 0.2 && output.dx < 0.5,
+            "unexpected dx: {}",
+            output.dx
+        );
         assert!(output.dy.abs() < 1e-9);
-        assert_eq!(state.handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Ended, 200, 0)).is_some(), false);
+        assert_eq!(
+            state
+                .handle_touch(
+                    DriverMode::Trackpad,
+                    touch_payload(TouchPhase::Ended, 200, 0)
+                )
+                .is_some(),
+            false
+        );
     }
 
     #[test]
     fn trackpad_stops_when_surface_delta_becomes_zero() {
         let mut state = PointingDeviceState::default();
-        assert_eq!(state.handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Began, 0, 0)).is_some(), false);
-        let first = state.handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Moved, 120, 0));
-        let second = state.handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Moved, 120, 0));
+        assert_eq!(
+            state
+                .handle_touch(DriverMode::Trackpad, touch_payload(TouchPhase::Began, 0, 0))
+                .is_some(),
+            false
+        );
+        let first = state.handle_touch(
+            DriverMode::Trackpad,
+            touch_payload(TouchPhase::Moved, 120, 0),
+        );
+        let second = state.handle_touch(
+            DriverMode::Trackpad,
+            touch_payload(TouchPhase::Moved, 120, 0),
+        );
         assert!(first.is_some());
         assert!(second.is_none());
     }
@@ -235,10 +281,21 @@ mod tests {
             false
         );
         let output = state
-            .handle_touch(DriverMode::Trackball, touch_payload(TouchPhase::Moved, i16::MIN + 2, 0))
+            .handle_touch(
+                DriverMode::Trackball,
+                touch_payload(TouchPhase::Moved, i16::MIN + 2, 0),
+            )
             .expect("wrapped movement expected");
-        assert!(output.dx > 0.01, "wrapped dx must stay positive and small, got {}", output.dx);
-        assert!(output.dx < 0.2, "wrapped dx must not create a large jump, got {}", output.dx);
+        assert!(
+            output.dx > 0.01,
+            "wrapped dx must stay positive and small, got {}",
+            output.dx
+        );
+        assert!(
+            output.dx < 0.2,
+            "wrapped dx must not create a large jump, got {}",
+            output.dx
+        );
         assert!(output.dy.abs() < 1e-9);
     }
 

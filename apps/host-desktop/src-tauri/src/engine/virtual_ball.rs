@@ -131,7 +131,10 @@ mod tests {
         let low = CFG.gain_for_speed(0.1);
         let mid = CFG.gain_for_speed(0.56);
         let high = CFG.gain_for_speed(2.0);
-        assert!(low < mid && mid < high, "unexpected gain profile: low={low}, mid={mid}, high={high}");
+        assert!(
+            low < mid && mid < high,
+            "unexpected gain profile: low={low}, mid={mid}, high={high}"
+        );
         assert!((high - CFG.roll_gain).abs() < 1e-9);
     }
 

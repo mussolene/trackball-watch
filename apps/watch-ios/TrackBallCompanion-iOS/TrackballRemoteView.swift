@@ -6,7 +6,7 @@ import Foundation
 
 /// iPhone screen for testing the shared trackball engine and relaying to the desktop host.
 struct TrackballRemoteView: View {
-    private static let defaultPipelineDebugEnabled = true
+    private static let defaultPipelineDebugEnabled = false
     private static let pipelineLog = Logger(subsystem: "com.trackball-watch.app", category: "TrackballPipeline")
     private static let pipelineDebugEnabled = ProcessInfo.processInfo.environment["TRACKBALL_DEBUG_PIPELINE"]
         .map { $0 != "0" }

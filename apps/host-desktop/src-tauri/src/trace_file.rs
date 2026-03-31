@@ -25,11 +25,7 @@ pub fn append_line(message: impl AsRef<str>) {
         Ok(guard) => guard,
         Err(_) => return,
     };
-    let mut file = match OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(path())
-    {
+    let mut file = match OpenOptions::new().create(true).append(true).open(path()) {
         Ok(file) => file,
         Err(_) => return,
     };
