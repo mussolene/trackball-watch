@@ -430,11 +430,20 @@ private struct TrackballRemoteSurface: View {
                     )
                 }
                 .frame(width: diameter, height: diameter)
-                .contentShape(Circle())
+                .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                        .onChanged { value in onChanged(value, diameter) }
-                        .onEnded { value in onEnded(value, diameter) }
+                        .onChanged { value in
+                            if !engine.isDragging,
+                               !isInsideTrackball(value.location, diameter: diameter) {
+                                return
+                            }
+                            onChanged(value, diameter)
+                        }
+                        .onEnded { value in
+                            guard engine.isDragging else { return }
+                            onEnded(value, diameter)
+                        }
                 )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -445,6 +454,12 @@ private struct TrackballRemoteSurface: View {
                 onDiameterChanged(newDiameter)
             }
         }
+    }
+
+    private func isInsideTrackball(_ location: CGPoint, diameter: CGFloat) -> Bool {
+        let radius = diameter * 0.5
+        let center = CGPoint(x: radius, y: radius)
+        return hypot(location.x - center.x, location.y - center.y) <= radius
     }
 }
 
