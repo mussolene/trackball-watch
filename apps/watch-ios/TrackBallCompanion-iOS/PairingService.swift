@@ -207,6 +207,13 @@ final class PairingService: ObservableObject {
         WatchRelayService.shared.connectUDP(to: config)
     }
 
+    func activateNextConnection() {
+        guard !connections.isEmpty else { return }
+        let currentIndex = connections.firstIndex { $0.deviceId == activeId } ?? -1
+        let nextIndex = (currentIndex + 1 + connections.count) % connections.count
+        activate(connections[nextIndex])
+    }
+
     func delete(_ config: DesktopConfig) {
         connections.removeAll { $0.deviceId == config.deviceId }
         if activeId == config.deviceId {

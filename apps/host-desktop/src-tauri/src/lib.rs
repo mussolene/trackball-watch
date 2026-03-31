@@ -785,12 +785,6 @@ fn handle_input_event(event: InputEvent, state: &Arc<Mutex<AppState>>, app: &tau
             let _ = app.emit("connection_status_changed", payload);
             update_tray(app, true, Some(&peer_addr.to_string()));
 
-            // Bring window to front when a device connects
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.set_focus();
-            }
-
             #[cfg(target_os = "macos")]
             if !injector::macos::MacOSInjector::has_accessibility_permission() {
                 let _ = app.emit(

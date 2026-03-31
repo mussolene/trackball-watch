@@ -88,11 +88,14 @@ struct TrackballRemoteView: View {
         return TrackballRemoteSurface(
             engine: engine,
             fingerLocation: visibleFingerLocation,
+            hostLabel: currentHostLabel,
+            canSwitchHosts: pairing.connections.count > 1,
             onChanged: onDragChanged,
             onEnded: onDragEnded,
             onTap: handleTapGesture,
             onDoubleTap: handleDoubleTapGesture,
             onLongPress: handleLongPressGesture,
+            onSwitchHost: switchToNextHost,
             onDiameterChanged: { diameter in
                 currentTrackballDiameter = diameter
             }
@@ -239,6 +242,12 @@ struct TrackballRemoteView: View {
         return "No active desktop selected in the companion app."
     }
 
+    private var currentHostLabel: String {
+        guard let active = pairing.activeConnection else { return "No Host" }
+        let name = active.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? active.host : name
+    }
+
     private func ensureDesktopRelayReady() {
         if !relay.isRunning {
             relay.start()
@@ -246,6 +255,14 @@ struct TrackballRemoteView: View {
 
         if let active = pairing.activeConnection {
             relay.connectUDP(to: active)
+        }
+    }
+
+    private func switchToNextHost() {
+        guard pairing.connections.count > 1 else { return }
+        pairing.activateNextConnection()
+        if sendToDesktop {
+            ensureDesktopRelayReady()
         }
     }
 
@@ -397,11 +414,14 @@ private struct TrackballRemoteSurface: View {
     @ObservedObject var engine: TrackballInteractionEngine
 
     let fingerLocation: CGPoint?
+    let hostLabel: String
+    let canSwitchHosts: Bool
     let onChanged: (DragGesture.Value, CGFloat) -> Void
     let onEnded: (DragGesture.Value, CGFloat) -> Void
     let onTap: () -> Void
     let onDoubleTap: () -> Void
     let onLongPress: () -> Void
+    let onSwitchHost: () -> Void
     let onDiameterChanged: (CGFloat) -> Void
 
     var body: some View {
@@ -474,6 +494,28 @@ private struct TrackballRemoteSurface: View {
                 )
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topTrailing) {
+                Button(action: onSwitchHost) {
+                    Image(systemName: "desktopcomputer")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(
+                            Circle()
+                                .fill(Color.white.opacity(canSwitchHosts ? 0.18 : 0.09))
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(!canSwitchHosts)
+                .opacity(canSwitchHosts ? 1.0 : 0.5)
+                .padding(14)
+                .accessibilityLabel("Switch Desktop")
+                .accessibilityHint(hostLabel)
+            }
             .onAppear {
                 onDiameterChanged(diameter)
             }
