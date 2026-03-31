@@ -17,8 +17,17 @@ pub trait InputInjector: Send + Sync {
     /// Move cursor to an absolute position.
     fn move_absolute(&self, x: f64, y: f64) -> Result<(), InjectorError>;
 
+    /// Press and hold the left mouse button.
+    fn left_button_down(&self) -> Result<(), InjectorError>;
+
+    /// Release the held left mouse button.
+    fn left_button_up(&self) -> Result<(), InjectorError>;
+
     /// Perform a left click.
-    fn left_click(&self) -> Result<(), InjectorError>;
+    fn left_click(&self) -> Result<(), InjectorError> {
+        self.left_button_down()?;
+        self.left_button_up()
+    }
 
     /// Perform a system-recognized double click.
     fn double_click(&self) -> Result<(), InjectorError> {

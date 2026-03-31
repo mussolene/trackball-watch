@@ -38,6 +38,10 @@ final class TrackballInteractionEngine: ObservableObject {
     private var lastDragPoint: CGPoint = .zero
     private var lastAcceptedDragDelta: CGPoint = .zero
     private var lastAcceptedDragDt: Double = 1.0 / 60.0
+    private var packetContactX: Int32 = 0
+    private var packetContactY: Int32 = 0
+    private var packetFractionX: CGFloat = 0
+    private var packetFractionY: CGFloat = 0
     /// Virtual-plane velocity of contact point (points per second).
     private var coastingPlaneVelocity: CGPoint = .zero
     /// Last time a drag sample passed the noise gate and updated ω (rolling).
@@ -49,10 +53,6 @@ final class TrackballInteractionEngine: ObservableObject {
     /// Smaller value → больше виртуальный стол до насыщения Int16.
     private let virtualContactPacketScale: CGFloat = 32.0
 
-    /// Keep `x * virtualContactPacketScale` within Int16 range for TBP payloads.
-    private var maxVirtualContact: CGFloat {
-        CGFloat(Int16.max) / virtualContactPacketScale
-    }
     private let tapMaxDistance: CGFloat = 8.0
     private let tapMaxDuration: TimeInterval = 0.28
     private let doubleTapWindow: TimeInterval = 0.32
@@ -60,8 +60,10 @@ final class TrackballInteractionEngine: ObservableObject {
     /// Sub-point noise; `lastDragPoint` is only advanced when movement meets this (avoids host desync).
     private let dragNoiseThreshold: CGFloat = 0.22
     private let cursorMotionGain: Double = 2.4
+    private let nominalBallDiameter: Double = 300.0
     private let dragAngularVelocityBlend: Double = 0.35
     private let dragPlaneVelocityBlend: Double = 0.35
+    private let releaseMotionIdleTimeout: TimeInterval = 0.09
     /// Keep per-packet axis step safely below wrap ambiguity threshold (Int16 ring).
     private let maxPacketDeltaPerTickRaw: CGFloat = 12_000
 
@@ -74,6 +76,10 @@ final class TrackballInteractionEngine: ObservableObject {
         lastDragPoint = .zero
         lastAcceptedDragDelta = .zero
         lastAcceptedDragDt = 1.0 / 60.0
+        packetContactX = 0
+        packetContactY = 0
+        packetFractionX = 0
+        packetFractionY = 0
         coastingPlaneVelocity = .zero
         dragStart = .zero
         lastRollingDragEventTime = .distantPast
@@ -95,6 +101,7 @@ final class TrackballInteractionEngine: ObservableObject {
         let now = Date()
         let point = location
         let radius = Double(sphereDiameter / 2)
+        let effectiveCursorGain = cursorGain(forBallDiameter: Double(sphereDiameter))
 
         if !isDragging {
             stoppedCoastByTouch = isCoasting
@@ -108,6 +115,10 @@ final class TrackballInteractionEngine: ObservableObject {
             angularVelocity = .zero
             pressureByte = 180
             virtualContactPoint = .zero
+            packetContactX = 0
+            packetContactY = 0
+            packetFractionX = 0
+            packetFractionY = 0
             lastTick = now
             lastOmegaSampleTime = now
             _ = sphereCenter
@@ -129,8 +140,8 @@ final class TrackballInteractionEngine: ObservableObject {
         lastAcceptedDragDelta = CGPoint(x: dx, y: dy)
         lastAcceptedDragDt = dt
         let measuredPlaneVelocity = CGPoint(
-            x: (dx * cursorMotionGain) / dt,
-            y: (dy * cursorMotionGain) / dt
+            x: (dx * effectiveCursorGain) / dt,
+            y: (dy * effectiveCursorGain) / dt
         )
         if hypot(coastingPlaneVelocity.x, coastingPlaneVelocity.y) > 1e-4 {
             coastingPlaneVelocity = CGPoint(
@@ -155,8 +166,10 @@ final class TrackballInteractionEngine: ObservableObject {
 
         let stepRotation = rotationFromPlaneDisplacement(dx: Double(dx), dy: Double(dy), radius: radius)
         orientation = simd_normalize(stepRotation * orientation)
-        virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + dx * cursorMotionGain)
-        virtualContactPoint.y = clampVirtualAxis(virtualContactPoint.y + dy * cursorMotionGain)
+        let cursorDelta = CGPoint(x: dx * effectiveCursorGain, y: dy * effectiveCursorGain)
+        virtualContactPoint.x = accumulateVirtualAxis(virtualContactPoint.x, delta: cursorDelta.x)
+        virtualContactPoint.y = accumulateVirtualAxis(virtualContactPoint.y, delta: cursorDelta.y)
+        advancePacketContact(by: cursorDelta)
 
         let speed = hypot(dx, dy)
         pressureByte = UInt8(clamping: Int(min(255.0, max(1.0, 24.0 + speed * 5.5))))
@@ -197,6 +210,13 @@ final class TrackballInteractionEngine: ObservableObject {
         }
 
         let radius = Double(sphereDiameter / 2.0)
+        let effectiveCursorGain = cursorGain(forBallDiameter: Double(sphereDiameter))
+        let idleSinceLastRolling = now.timeIntervalSince(lastRollingDragEventTime)
+        if idleSinceLastRolling > releaseMotionIdleTimeout {
+            angularVelocity = .zero
+            coastingPlaneVelocity = .zero
+            return [touchEvent(.ended)]
+        }
         if radius > 0 {
             if hypot(coastingPlaneVelocity.x, coastingPlaneVelocity.y) <= 0.12,
                hypot(lastAcceptedDragDelta.x, lastAcceptedDragDelta.y) >= dragNoiseThreshold {
@@ -208,8 +228,8 @@ final class TrackballInteractionEngine: ObservableObject {
                     dt: max(1e-4, min(0.25, lastAcceptedDragDt))
                 )
                 coastingPlaneVelocity = CGPoint(
-                    x: (lastAcceptedDragDelta.x * cursorMotionGain) / max(1e-4, min(0.25, lastAcceptedDragDt)),
-                    y: (lastAcceptedDragDelta.y * cursorMotionGain) / max(1e-4, min(0.25, lastAcceptedDragDt))
+                    x: (lastAcceptedDragDelta.x * effectiveCursorGain) / max(1e-4, min(0.25, lastAcceptedDragDt)),
+                    y: (lastAcceptedDragDelta.y * effectiveCursorGain) / max(1e-4, min(0.25, lastAcceptedDragDt))
                 )
             }
 
@@ -238,8 +258,8 @@ final class TrackballInteractionEngine: ObservableObject {
                     angularVelocity = terminalOmega
                 }
                 coastingPlaneVelocity = CGPoint(
-                    x: (endDX * cursorMotionGain) / endDt,
-                    y: (endDY * cursorMotionGain) / endDt
+                    x: (endDX * effectiveCursorGain) / endDt,
+                    y: (endDY * effectiveCursorGain) / endDt
                 )
             }
 
@@ -277,10 +297,11 @@ final class TrackballInteractionEngine: ObservableObject {
 
         if let feedback = coastingFeedback, feedback.active {
             let radius = Double(ballDiameter / 2.0)
+            let effectiveCursorGain = cursorGain(forBallDiameter: Double(ballDiameter))
             if radius > 0 {
                 let target = SIMD3<Double>(
-                    feedback.vy / (radius * cursorMotionGain),
-                    feedback.vx / (radius * cursorMotionGain),
+                    feedback.vy / (radius * effectiveCursorGain),
+                    feedback.vx / (radius * effectiveCursorGain),
                     0
                 )
                 angularVelocity = angularVelocity * 0.7 + target * 0.3
@@ -295,13 +316,15 @@ final class TrackballInteractionEngine: ObservableObject {
         }
 
         let radius = Double(ballDiameter / 2.0)
+        let effectiveCursorGain = cursorGain(forBallDiameter: Double(ballDiameter))
         var delta = CGPoint(
             x: coastingPlaneVelocity.x * dt,
             y: coastingPlaneVelocity.y * dt
         )
         delta = clampDeltaForPacketContinuity(delta)
-        virtualContactPoint.x = clampVirtualAxis(virtualContactPoint.x + delta.x)
-        virtualContactPoint.y = clampVirtualAxis(virtualContactPoint.y + delta.y)
+        virtualContactPoint.x = accumulateVirtualAxis(virtualContactPoint.x, delta: delta.x)
+        virtualContactPoint.y = accumulateVirtualAxis(virtualContactPoint.y, delta: delta.y)
+        advancePacketContact(by: delta)
 
         let clampedFriction = max(0.001, min(0.999, friction))
         let damping = -log(clampedFriction) * 60.0
@@ -311,8 +334,8 @@ final class TrackballInteractionEngine: ObservableObject {
 
         if radius > 1e-6 {
             angularVelocity = SIMD3<Double>(
-                Double(coastingPlaneVelocity.y) / (radius * cursorMotionGain),
-                Double(coastingPlaneVelocity.x) / (radius * cursorMotionGain),
+                Double(coastingPlaneVelocity.y) / (radius * effectiveCursorGain),
+                Double(coastingPlaneVelocity.x) / (radius * effectiveCursorGain),
                 0
             )
         } else {
@@ -345,8 +368,8 @@ final class TrackballInteractionEngine: ObservableObject {
         }
         return .touch(
             phase: phase,
-            x: Int16(clamping: Int((virtualContactPoint.x * virtualContactPacketScale).rounded())),
-            y: Int16(clamping: Int((virtualContactPoint.y * virtualContactPacketScale).rounded())),
+            x: packetContactAxis(packetContactX),
+            y: packetContactAxis(packetContactY),
             pressure: p
         )
     }
@@ -363,8 +386,8 @@ final class TrackballInteractionEngine: ObservableObject {
         }
         return .touch(
             phase: phase,
-            x: Int16(clamping: Int((virtualContactPoint.x * virtualContactPacketScale).rounded())),
-            y: Int16(clamping: Int((virtualContactPoint.y * virtualContactPacketScale).rounded())),
+            x: packetContactAxis(packetContactX),
+            y: packetContactAxis(packetContactY),
             pressure: pressure
         )
     }
@@ -379,10 +402,44 @@ final class TrackballInteractionEngine: ObservableObject {
         return [.tap]
     }
 
-    private func clampVirtualAxis(_ value: CGFloat) -> CGFloat {
-        guard value.isFinite else { return 0 }
-        // No toroidal wrap: keep contact continuous without boundary jumps.
-        return max(min(value, maxVirtualContact), -maxVirtualContact)
+    private func accumulateVirtualAxis(_ value: CGFloat, delta: CGFloat) -> CGFloat {
+        let next = value + delta
+        guard next.isFinite else { return 0 }
+        return next
+    }
+
+    private func advancePacketContact(by delta: CGPoint) {
+        packetContactX = advancePacketAxis(
+            packetContactX,
+            fraction: &packetFractionX,
+            deltaRaw: delta.x * virtualContactPacketScale
+        )
+        packetContactY = advancePacketAxis(
+            packetContactY,
+            fraction: &packetFractionY,
+            deltaRaw: delta.y * virtualContactPacketScale
+        )
+    }
+
+    private func advancePacketAxis(_ current: Int32, fraction: inout CGFloat, deltaRaw: CGFloat) -> Int32 {
+        guard deltaRaw.isFinite else {
+            fraction = 0
+            return current
+        }
+
+        let total = fraction + deltaRaw
+        let step = Int32(total.rounded(.towardZero))
+        fraction = total - CGFloat(step)
+        return current &+ step
+    }
+
+    private func packetContactAxis(_ value: Int32) -> Int16 {
+        Int16(truncatingIfNeeded: value)
+    }
+
+    private func cursorGain(forBallDiameter diameter: Double) -> CGFloat {
+        let safeDiameter = max(1.0, diameter)
+        return CGFloat(cursorMotionGain * (safeDiameter / nominalBallDiameter))
     }
 
     private func clampDeltaForPacketContinuity(_ delta: CGPoint) -> CGPoint {

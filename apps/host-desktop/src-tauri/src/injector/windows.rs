@@ -64,8 +64,12 @@ mod imp {
             Ok(())
         }
 
-        fn left_click(&self) -> Result<(), InjectorError> {
+        fn left_button_down(&self) -> Result<(), InjectorError> {
             self.send_mouse_input(MOUSEEVENTF_LEFTDOWN, 0, 0, 0);
+            Ok(())
+        }
+
+        fn left_button_up(&self) -> Result<(), InjectorError> {
             self.send_mouse_input(MOUSEEVENTF_LEFTUP, 0, 0, 0);
             Ok(())
         }

@@ -1,9 +1,18 @@
 import SwiftUI
 import UIKit
 import simd
+import OSLog
+import Foundation
 
 /// iPhone screen for testing the shared trackball engine and relaying to the desktop host.
 struct TrackballRemoteView: View {
+    private static let defaultPipelineDebugEnabled = true
+    private static let pipelineLog = Logger(subsystem: "com.trackball-watch.app", category: "TrackballPipeline")
+    private static let pipelineDebugEnabled = ProcessInfo.processInfo.environment["TRACKBALL_DEBUG_PIPELINE"]
+        .map { $0 != "0" }
+        ?? defaultPipelineDebugEnabled
+    private static let fileTrace = CompanionTraceFileLogger(fileName: "trackball-companion-trace.log")
+
     @StateObject private var relay = WatchRelayService.shared
     @StateObject private var pairing = PairingService.shared
     @StateObject private var engine = TrackballInteractionEngine()
@@ -11,10 +20,12 @@ struct TrackballRemoteView: View {
     @State private var sendToDesktop = false
     @State private var showAdvancedTuning = false
     @State private var localTrackballFriction = 0.96
+    @State private var virtualTrackballScale = 1.0
     @State private var lastGesture = "None"
     @State private var visibleFingerLocation: CGPoint?
     @State private var currentTrackballDiameter: CGFloat = 300
     @State private var isStreamingCoastTouch = false
+    @State private var isPrimaryButtonHeld = false
 
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
@@ -75,7 +86,7 @@ struct TrackballRemoteView: View {
         .onReceive(tick) { now in
             _ = engine.tickPhysics(
                 now: now,
-                ballDiameter: currentTrackballDiameter,
+                ballDiameter: currentVirtualTrackballDiameter,
                 friction: localTrackballFriction
             )
             if !engine.isDragging && engine.isCoasting {
@@ -143,6 +154,13 @@ struct TrackballRemoteView: View {
     private var tuningPanel: some View {
         DisclosureGroup(isExpanded: $showAdvancedTuning) {
             VStack(alignment: .leading, spacing: 14) {
+                VStack(alignment: .leading, spacing: 6) {
+                    sliderRow("Virtual Ball Size", value: $virtualTrackballScale, range: 0.55...10.0)
+                    Text("Larger virtual ball increases cursor speed. Current: \(Int(currentVirtualTrackballDiameter.rounded())) pt")
+                        .font(.caption)
+                        .foregroundStyle(.white.opacity(0.66))
+                }
+
                 sliderRow("Local Friction", value: $localTrackballFriction, range: 0.85...0.995)
 
                 Button("Reset Trackball State") {
@@ -180,8 +198,10 @@ struct TrackballRemoteView: View {
                 "Angular Velocity",
                 value: "\(format(engine.angularVelocity.x)), \(format(engine.angularVelocity.y))"
             )
+            statRow("Virtual Ball", value: "\(Int(currentVirtualTrackballDiameter.rounded())) pt")
             statRow("Desktop Link", value: desktopLinkText)
             statRow("Packets Relayed", value: "\(relay.packetsRelayed)")
+            statRow("Mouse Hold", value: isPrimaryButtonHeld ? "Down" : "Up")
             statRow("Last Gesture", value: lastGesture)
         }
         .padding(16)
@@ -253,13 +273,22 @@ struct TrackballRemoteView: View {
         return name.isEmpty ? active.host : name
     }
 
+    private var currentVirtualTrackballDiameter: CGFloat {
+        let scaledDiameter = currentTrackballDiameter * CGFloat(virtualTrackballScale)
+        return min(max(120, scaledDiameter), 900)
+    }
+
     private func ensureDesktopRelayReady() {
         if !relay.isRunning {
+            Self.fileTrace.log("relay.start")
             relay.start()
         }
 
         if let active = pairing.activeConnection {
-            relay.connectUDP(to: active)
+            if !relay.isConnected(to: active) {
+                Self.fileTrace.log("relay.connect host=\(active.host):\(active.port) id=\(active.deviceId)")
+                relay.connectUDP(to: active)
+            }
         }
     }
 
@@ -277,7 +306,7 @@ struct TrackballRemoteView: View {
         let events = engine.handleDragChanged(
             location: value.location,
             sphereCenter: center,
-            sphereDiameter: diameter
+            sphereDiameter: currentVirtualTrackballDiameter
         )
         send(events)
     }
@@ -286,14 +315,19 @@ struct TrackballRemoteView: View {
         visibleFingerLocation = nil
         let events = engine.handleDragEnded(
             location: value.location,
-            sphereDiameter: diameter
+            sphereDiameter: currentVirtualTrackballDiameter
         )
         send(events)
     }
 
     private func handleTapGesture() {
         tapFeedback.impactOccurred(intensity: 0.7)
-        lastGesture = "Tap"
+        if isPrimaryButtonHeld {
+            isPrimaryButtonHeld = false
+            lastGesture = "Release"
+        } else {
+            lastGesture = "Tap"
+        }
         sendGesture(.tap)
     }
 
@@ -305,7 +339,8 @@ struct TrackballRemoteView: View {
 
     private func handleLongPressGesture() {
         impactFeedback.impactOccurred(intensity: 0.85)
-        lastGesture = "Long Press"
+        isPrimaryButtonHeld.toggle()
+        lastGesture = isPrimaryButtonHeld ? "Hold Down" : "Hold Up"
         sendGesture(.longPress)
     }
 
@@ -330,12 +365,20 @@ struct TrackballRemoteView: View {
     private func sendTouch(phase: TrackballEngineTouchPhase, x: Int16, y: Int16, pressure: UInt8) {
         guard sendToDesktop else { return }
         ensureDesktopRelayReady()
-        relay.relay(packetBuilder.touch(phase: companionTouchPhase(phase), x: x, y: y, pressure: pressure))
+        let packet = packetBuilder.touch(phase: companionTouchPhase(phase), x: x, y: y, pressure: pressure)
+        if Self.pipelineDebugEnabled {
+            Self.pipelineLog.debug(
+                "touch seq=\(self.packetBuilder.sequence, privacy: .public) phase=\(String(describing: phase), privacy: .public) x=\(x, privacy: .public) y=\(y, privacy: .public) pressure=\(pressure, privacy: .public) bytes=\(packet.count, privacy: .public)"
+            )
+        }
+        Self.fileTrace.log("touch seq=\(packetBuilder.sequence) phase=\(phase) x=\(x) y=\(y) pressure=\(pressure) bytes=\(packet.count)")
+        relay.relay(packet)
     }
 
     private func sendGesture(_ gesture: DebugGestureType) {
         guard sendToDesktop else { return }
         ensureDesktopRelayReady()
+        Self.fileTrace.log("gesture \(gesture.rawValue)")
         relay.relay(packetBuilder.gesture(gesture))
     }
 
@@ -352,6 +395,47 @@ struct TrackballRemoteView: View {
         }
     }
 
+}
+
+private final class CompanionTraceFileLogger {
+    private let logger = Logger(subsystem: "com.trackball-watch.app", category: "TrackballPipeline")
+    private let queue = DispatchQueue(label: "com.trackball.tracefile", qos: .utility)
+    private let fileURL: URL
+    private let formatter: ISO8601DateFormatter = {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
+    }()
+    private var didReset = false
+
+    init(fileName: String) {
+        let baseURL = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory(), isDirectory: true)
+        self.fileURL = baseURL.appendingPathComponent(fileName)
+    }
+
+    func log(_ message: String) {
+        queue.async { [self] in
+            do {
+                if !self.didReset {
+                    try Data().write(to: self.fileURL, options: .atomic)
+                    self.didReset = true
+                }
+                let line = "[\(self.formatter.string(from: Date()))] \(message)\n"
+                if let data = line.data(using: .utf8) {
+                    if let handle = try? FileHandle(forWritingTo: self.fileURL) {
+                        try handle.seekToEnd()
+                        try handle.write(contentsOf: data)
+                        try handle.close()
+                    } else {
+                        try data.write(to: self.fileURL, options: .atomic)
+                    }
+                }
+            } catch {
+                self.logger.error("trace file write failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
 }
 
 private struct TrackballRemoteSurface: View {

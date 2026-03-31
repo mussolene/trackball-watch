@@ -8,11 +8,15 @@ use crate::injector::platform::{InjectorError, InputInjector};
 #[cfg(target_os = "macos")]
 mod imp {
     use super::*;
+    use crate::trace_file;
     use core_foundation::boolean::CFBoolean;
     use core_foundation::dictionary::CFDictionary;
-    use core_foundation::string::CFString;
     use core_foundation::base::TCFType;
+    use core_foundation::string::CFString;
     use std::ffi::c_void;
+    use std::sync::{Mutex, OnceLock};
+
+    const DEFAULT_MOTION_DEBUG: bool = true;
 
     type CGEventRef = *mut c_void;
     type CGEventSourceRef = *mut c_void;
@@ -27,6 +31,7 @@ mod imp {
 
     // CGEventType constants
     const K_CGEVENT_MOUSE_MOVED: u32 = 5;
+    const K_CGEVENT_LEFT_MOUSE_DRAGGED: u32 = 6;
     const K_CGEVENT_LEFT_MOUSE_DOWN: u32 = 1;
     const K_CGEVENT_LEFT_MOUSE_UP: u32 = 2;
     const K_CGEVENT_RIGHT_MOUSE_DOWN: u32 = 3;
@@ -81,6 +86,16 @@ mod imp {
             CFRelease(event);
             (pos.x, pos.y)
         }
+    }
+
+    fn cursor_target_cache() -> &'static Mutex<Option<(f64, f64)>> {
+        static CACHE: OnceLock<Mutex<Option<(f64, f64)>>> = OnceLock::new();
+        CACHE.get_or_init(|| Mutex::new(None))
+    }
+
+    fn left_button_held_state() -> &'static Mutex<bool> {
+        static STATE: OnceLock<Mutex<bool>> = OnceLock::new();
+        STATE.get_or_init(|| Mutex::new(false))
     }
 
     pub struct MacOSInjector;
@@ -154,25 +169,97 @@ mod imp {
     impl InputInjector for MacOSInjector {
         /// `dx`/`dy` may be fractional; `CGEvent` uses `CGFloat` (sub-point positioning).
         fn move_relative(&self, dx: f64, dy: f64) -> Result<(), InjectorError> {
-            let (cx, cy) = current_mouse_position();
-            self.post_mouse_event(
-                K_CGEVENT_MOUSE_MOVED,
-                cx + dx,
-                cy + dy,
-                K_CGMOUSE_BUTTON_LEFT,
-            );
+            let motion_debug = std::env::var("TRACKBALL_DEBUG_MOTION")
+                .map(|v| v != "0")
+                .unwrap_or(DEFAULT_MOTION_DEBUG);
+            let cache = cursor_target_cache();
+            let mut target = cache.lock().map_err(|_| InjectorError::Platform("cursor cache poisoned".into()))?;
+            let actual = current_mouse_position();
+            let (base_x, base_y, drift) = match *target {
+                Some((cached_x, cached_y)) => {
+                    let drift = (actual.0 - cached_x).hypot(actual.1 - cached_y);
+                    if drift > 48.0 {
+                        (actual.0, actual.1, drift)
+                    } else {
+                        (cached_x, cached_y, drift)
+                    }
+                }
+                None => (actual.0, actual.1, 0.0),
+            };
+            let next_x = base_x + dx;
+            let next_y = base_y + dy;
+            if motion_debug {
+                log::debug!(
+                    "injector move_relative: actual=({:.3}, {:.3}) base=({:.3}, {:.3}) delta=({:.3}, {:.3}) next=({:.3}, {:.3}) drift={:.3}",
+                    actual.0,
+                    actual.1,
+                    base_x,
+                    base_y,
+                    dx,
+                    dy,
+                    next_x,
+                    next_y,
+                    drift
+                );
+                trace_file::append_line(format!(
+                    "injector move_relative actual=({:.3}, {:.3}) base=({:.3}, {:.3}) delta=({:.3}, {:.3}) next=({:.3}, {:.3}) drift={:.3}",
+                    actual.0,
+                    actual.1,
+                    base_x,
+                    base_y,
+                    dx,
+                    dy,
+                    next_x,
+                    next_y,
+                    drift
+                ));
+            }
+            let event_type = if left_button_held_state()
+                .lock()
+                .map(|held| *held)
+                .unwrap_or(false)
+            {
+                K_CGEVENT_LEFT_MOUSE_DRAGGED
+            } else {
+                K_CGEVENT_MOUSE_MOVED
+            };
+            self.post_mouse_event(event_type, next_x, next_y, K_CGMOUSE_BUTTON_LEFT);
+            *target = Some((next_x, next_y));
             Ok(())
         }
 
         fn move_absolute(&self, x: f64, y: f64) -> Result<(), InjectorError> {
-            self.post_mouse_event(K_CGEVENT_MOUSE_MOVED, x, y, K_CGMOUSE_BUTTON_LEFT);
+            let event_type = if left_button_held_state()
+                .lock()
+                .map(|held| *held)
+                .unwrap_or(false)
+            {
+                K_CGEVENT_LEFT_MOUSE_DRAGGED
+            } else {
+                K_CGEVENT_MOUSE_MOVED
+            };
+            self.post_mouse_event(event_type, x, y, K_CGMOUSE_BUTTON_LEFT);
+            if let Ok(mut target) = cursor_target_cache().lock() {
+                *target = Some((x, y));
+            }
             Ok(())
         }
 
-        fn left_click(&self) -> Result<(), InjectorError> {
+        fn left_button_down(&self) -> Result<(), InjectorError> {
             let (x, y) = current_mouse_position();
             self.post_mouse_event(K_CGEVENT_LEFT_MOUSE_DOWN, x, y, K_CGMOUSE_BUTTON_LEFT);
+            if let Ok(mut held) = left_button_held_state().lock() {
+                *held = true;
+            }
+            Ok(())
+        }
+
+        fn left_button_up(&self) -> Result<(), InjectorError> {
+            let (x, y) = current_mouse_position();
             self.post_mouse_event(K_CGEVENT_LEFT_MOUSE_UP, x, y, K_CGMOUSE_BUTTON_LEFT);
+            if let Ok(mut held) = left_button_held_state().lock() {
+                *held = false;
+            }
             Ok(())
         }
 

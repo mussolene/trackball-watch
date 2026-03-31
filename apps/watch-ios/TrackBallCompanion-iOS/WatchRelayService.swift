@@ -143,6 +143,14 @@ final class WatchRelayService: NSObject, ObservableObject {
 
     // MARK: - UDP relay
 
+    func isConnected(to desktop: DesktopConfig) -> Bool {
+        guard let pairedDesktop else { return false }
+        return pairedDesktop.host == desktop.host
+            && pairedDesktop.port == desktop.port
+            && pairedDesktop.deviceId == desktop.deviceId
+            && desktopLinkState == .connected
+    }
+
     func connectUDP(to desktop: DesktopConfig) {
         log.info("connectUDP → \(desktop.host, privacy: .public):\(desktop.port, privacy: .public)")
         pairedDesktop = desktop

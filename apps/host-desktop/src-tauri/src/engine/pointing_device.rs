@@ -1,6 +1,9 @@
 use crate::protocol::packets::{TouchPayload, TouchPhase};
+use crate::trace_file;
 
 use super::virtual_ball::{MotionDecision, MotionTelemetry, VirtualBallConfig};
+
+const DEFAULT_MOTION_DEBUG: bool = true;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriverMode {
@@ -41,6 +44,7 @@ pub struct PointingDeviceState {
     last_raw_y: f64,
     last_packet_x: i16,
     last_packet_y: i16,
+    last_seq: Option<u16>,
 }
 
 impl PointingDeviceState {
@@ -49,6 +53,18 @@ impl PointingDeviceState {
         self.last_raw_y = 0.0;
         self.last_packet_x = 0;
         self.last_packet_y = 0;
+        self.last_seq = None;
+    }
+
+    pub fn accept_sequence(&mut self, seq: u16) -> bool {
+        let accepted = match self.last_seq {
+            None => true,
+            Some(prev) => is_newer_packet(seq, prev),
+        };
+        if accepted {
+            self.last_seq = Some(seq);
+        }
+        accepted
     }
 
     pub fn handle_touch(
@@ -56,6 +72,9 @@ impl PointingDeviceState {
         mode: DriverMode,
         payload: TouchPayload,
     ) -> Option<DriverOutput> {
+        let motion_debug = std::env::var("TRACKBALL_DEBUG_MOTION")
+            .map(|v| v != "0")
+            .unwrap_or(DEFAULT_MOTION_DEBUG);
         let phase = TouchPhase::try_from(payload.phase).unwrap_or(TouchPhase::Moved);
         if matches!(phase, TouchPhase::Ended | TouchPhase::Cancelled) {
             self.reset();
@@ -82,6 +101,28 @@ impl PointingDeviceState {
             DriverMode::Trackball => {
                 let raw_dx = wrapped_i16_delta(payload.x, self.last_packet_x) as f64;
                 let raw_dy = wrapped_i16_delta(payload.y, self.last_packet_y) as f64;
+                if motion_debug {
+                    log::debug!(
+                        "trackball decode: prev=({}, {}) curr=({}, {}) wrapped_delta=({}, {}) packet_scale={}",
+                        self.last_packet_x,
+                        self.last_packet_y,
+                        payload.x,
+                        payload.y,
+                        raw_dx,
+                        raw_dy,
+                        config.packet_scale
+                    );
+                    trace_file::append_line(format!(
+                        "trackball decode prev=({}, {}) curr=({}, {}) wrapped_delta=({}, {}) scale={}",
+                        self.last_packet_x,
+                        self.last_packet_y,
+                        payload.x,
+                        payload.y,
+                        raw_dx,
+                        raw_dy,
+                        config.packet_scale
+                    ));
+                }
                 (raw_dx / config.packet_scale, raw_dy / config.packet_scale)
             }
         };
@@ -119,6 +160,11 @@ fn wrapped_i16_delta(curr: i16, prev: i16) -> i32 {
         d += 1 << 16;
     }
     d
+}
+
+fn is_newer_packet(seq: u16, prev: u16) -> bool {
+    let delta = seq.wrapping_sub(prev);
+    delta != 0 && delta < 0x8000
 }
 
 #[cfg(test)]
@@ -194,5 +240,22 @@ mod tests {
         assert!(output.dx > 0.01, "wrapped dx must stay positive and small, got {}", output.dx);
         assert!(output.dx < 0.2, "wrapped dx must not create a large jump, got {}", output.dx);
         assert!(output.dy.abs() < 1e-9);
+    }
+
+    #[test]
+    fn sequence_filter_rejects_duplicates_and_older_packets() {
+        let mut state = PointingDeviceState::default();
+        assert!(state.accept_sequence(10));
+        assert!(!state.accept_sequence(10));
+        assert!(state.accept_sequence(11));
+        assert!(!state.accept_sequence(9));
+    }
+
+    #[test]
+    fn sequence_filter_accepts_wraparound() {
+        let mut state = PointingDeviceState::default();
+        assert!(state.accept_sequence(u16::MAX));
+        assert!(state.accept_sequence(0));
+        assert!(state.accept_sequence(1));
     }
 }
