@@ -7,6 +7,15 @@
 //! We use a `CGEventSource` in `kCGEventSourceStateHIDSystemState`. If the Dock still does not
 //! reveal, try `TRACKBALL_CG_EVENT_TAP=session`, or turn off “Automatically hide and show Dock”
 //! in System Settings → Desktop & Dock, or use the keyboard shortcut to show the Dock (e.g. ⌃F3).
+//!
+//! **Screen edges:** a physical mouse stops at the bezel; the OS clamps the cursor to the display
+//! and absorbs further motion until you move back. We inject **absolute** positions from
+//! `current + delta`; without clamping, those coordinates can sit **outside** `CGDisplayBounds`,
+//! so the on-screen cursor stays on the edge but our **next** events are “past” the bezel — Hot
+//! Corners, screen edges, and the Dock often need the pointer **on** the real edge. We therefore
+//! clamp injected moves to the active display rectangle (see Apple’s Core Graphics docs for
+//! `CGDisplayBounds` / `CGGetDisplaysWithPoint`). Optional extra inset only if you explicitly want
+//! to stay away from edges: `TRACKBALL_SCREEN_EDGE_INSET` (points, default `0`).
 
 use crate::injector::platform::{InjectorError, InputInjector};
 
@@ -33,6 +42,23 @@ mod imp {
         x: CGFloat,
         y: CGFloat,
     }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct CGSize {
+        width: CGFloat,
+        height: CGFloat,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct CGRect {
+        origin: CGPoint,
+        size: CGSize,
+    }
+
+    type CGDirectDisplayID = u32;
+    type CGError = i32;
 
     // CGEventType constants
     const K_CGEVENT_MOUSE_MOVED: u32 = 5;
@@ -77,6 +103,14 @@ mod imp {
         fn CGEventSetIntegerValueField(event: CGEventRef, field: u32, value: i64);
         fn CFRelease(cf: CGEventRef);
         fn CGEventGetLocation(event: CGEventRef) -> CGPoint;
+        fn CGDisplayBounds(display: CGDirectDisplayID) -> CGRect;
+        fn CGMainDisplayID() -> CGDirectDisplayID;
+        fn CGGetDisplaysWithPoint(
+            point: CGPoint,
+            max_displays: u32,
+            displays: *mut CGDirectDisplayID,
+            display_count: *mut u32,
+        ) -> CGError;
     }
 
     #[link(name = "ApplicationServices", kind = "framework")]
@@ -95,6 +129,63 @@ mod imp {
             CFRelease(event);
             (pos.x, pos.y)
         }
+    }
+
+    const K_CG_ERROR_SUCCESS: CGError = 0;
+
+    /// Optional extra inset from each display edge (points), **in addition** to clamping to
+    /// `CGDisplayBounds`. Default `0` so the cursor can reach the real edge (Dock / Hot Corners).
+    fn optional_screen_edge_inset_points() -> f64 {
+        match std::env::var("TRACKBALL_SCREEN_EDGE_INSET") {
+            Ok(s) => {
+                let v = s.trim().parse::<f64>().unwrap_or(0.0);
+                if v.is_finite() && v >= 0.0 {
+                    v
+                } else {
+                    0.0
+                }
+            }
+            Err(_) => 0.0,
+        }
+    }
+
+    unsafe fn display_id_for_point(x: f64, y: f64) -> CGDirectDisplayID {
+        let mut ids = [0u32; 8];
+        let mut count = 0u32;
+        let p = CGPoint { x, y };
+        let err = CGGetDisplaysWithPoint(p, 8, ids.as_mut_ptr(), &mut count);
+        if err == K_CG_ERROR_SUCCESS && count > 0 {
+            ids[0]
+        } else {
+            CGMainDisplayID()
+        }
+    }
+
+    fn clamp_to_rect_inset(x: f64, y: f64, rect: CGRect, inset: f64) -> (f64, f64) {
+        let mut min_x = rect.origin.x + inset;
+        let mut max_x = rect.origin.x + rect.size.width - inset;
+        let mut min_y = rect.origin.y + inset;
+        let mut max_y = rect.origin.y + rect.size.height - inset;
+        if min_x > max_x {
+            let mid = rect.origin.x + rect.size.width * 0.5;
+            min_x = mid;
+            max_x = mid;
+        }
+        if min_y > max_y {
+            let mid = rect.origin.y + rect.size.height * 0.5;
+            min_y = mid;
+            max_y = mid;
+        }
+        (x.clamp(min_x, max_x), y.clamp(min_y, max_y))
+    }
+
+    /// Clamp to the display that contains `(x,y)`, inside `CGDisplayBounds`, minus `extra_inset`
+    /// on each side (extra inset is usually `0` so the pointer can sit on the true edge).
+    fn clamp_point_to_display_bounds(x: f64, y: f64, extra_inset: f64) -> (f64, f64) {
+        let id = unsafe { display_id_for_point(x, y) };
+        let rect = unsafe { CGDisplayBounds(id) };
+        let inset = extra_inset.max(0.0);
+        clamp_to_rect_inset(x, y, rect, inset)
     }
 
     fn cursor_target_cache() -> &'static Mutex<Option<(f64, f64)>> {
@@ -166,12 +257,7 @@ mod imp {
         fn post_mouse_event(&self, event_type: u32, x: f64, y: f64, button: u32) {
             unsafe {
                 let source = hid_system_event_source();
-                let event = CGEventCreateMouseEvent(
-                    source,
-                    event_type,
-                    CGPoint { x, y },
-                    button,
-                );
+                let event = CGEventCreateMouseEvent(source, event_type, CGPoint { x, y }, button);
                 if !event.is_null() {
                     CGEventPost(cg_event_post_tap(), event);
                     CFRelease(event);
@@ -183,12 +269,7 @@ mod imp {
             let (x, y) = current_mouse_position();
             unsafe {
                 let source = hid_system_event_source();
-                let event = CGEventCreateMouseEvent(
-                    source,
-                    event_type,
-                    CGPoint { x, y },
-                    button,
-                );
+                let event = CGEventCreateMouseEvent(source, event_type, CGPoint { x, y }, button);
                 if !event.is_null() {
                     CGEventSetIntegerValueField(event, K_CGMOUSE_EVENT_CLICK_STATE, click_state);
                     CGEventPost(cg_event_post_tap(), event);
@@ -205,12 +286,12 @@ mod imp {
                 .map(|v| v != "0")
                 .unwrap_or(DEFAULT_MOTION_DEBUG);
             let actual = current_mouse_position();
-            // Always anchor relative motion to the real cursor position.
-            // This avoids "virtual overflow" when the cursor is clamped by screen edges.
+            // Anchor to the real cursor, then clamp to the display rect so we never inject a point
+            // past the bezel (otherwise edge gestures / Dock see a mismatched path vs a real mouse).
             let base_x = actual.0;
             let base_y = actual.1;
-            let next_x = base_x + dx;
-            let next_y = base_y + dy;
+            let extra = optional_screen_edge_inset_points();
+            let (next_x, next_y) = clamp_point_to_display_bounds(base_x + dx, base_y + dy, extra);
             if motion_debug {
                 log::debug!(
                     "injector move_relative: actual=({:.3}, {:.3}) base=({:.3}, {:.3}) delta=({:.3}, {:.3}) next=({:.3}, {:.3})",
@@ -260,6 +341,8 @@ mod imp {
         }
 
         fn move_absolute(&self, x: f64, y: f64) -> Result<(), InjectorError> {
+            let extra = optional_screen_edge_inset_points();
+            let (x, y) = clamp_point_to_display_bounds(x, y, extra);
             let event_type = if left_button_held_state()
                 .lock()
                 .map(|held| *held)
