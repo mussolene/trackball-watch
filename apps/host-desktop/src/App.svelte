@@ -66,6 +66,9 @@
     const resolved =
       t ?? (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     document.documentElement.setAttribute('data-theme', resolved);
+    // WebView2 (Windows): native controls stay light unless the page opts into dark form controls.
+    document.documentElement.style.colorScheme =
+      resolved === 'dark' ? 'dark' : 'light';
   }
 
   function defaultConfig() {
@@ -307,6 +310,15 @@
 </main>
 
 <style>
+  /* Match native control painting to our theme (especially WebView2 on Windows). */
+  :global(html) {
+    color-scheme: light;
+  }
+  :global(html[data-theme='dark']) {
+    color-scheme: dark;
+    scrollbar-color: #6e6e73 #2c2c2e;
+  }
+
   :global(html),
   :global(body),
   :global(#app) {
