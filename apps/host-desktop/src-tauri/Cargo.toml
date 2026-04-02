@@ -45,6 +45,10 @@ tauri-build = { version = "2", features = [] }
 proptest = "1"
 tokio-test = "0.4"
 
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+mdns-sd = { version = "0.11", default-features = false }
+hostname = "0.4"
+
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.9"
 

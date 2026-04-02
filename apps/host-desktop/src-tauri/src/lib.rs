@@ -529,7 +529,9 @@ pub fn run() {
                             .iter()
                             .map(|b| (b.host.clone(), b.interface.clone()))
                             .collect();
-                        let _ = mdns.advertise_many(udp_port, &device_id, &mdns_hosts);
+                        if let Err(e) = mdns.advertise_many(udp_port, &device_id, &mdns_hosts) {
+                            log::warn!("mDNS: advertise_many failed: {e}");
+                        }
                         Some(mdns)
                     } else {
                         None
@@ -636,12 +638,32 @@ fn is_rfc1918_ipv4(ip: Ipv4Addr) -> bool {
 }
 
 fn interface_priority(name: &str) -> u8 {
-    if name.starts_with("en0") || name.starts_with("wlan") || name.starts_with("wifi") {
-        0
-    } else if name.starts_with("en") || name.starts_with("eth") {
-        1
-    } else {
+    #[cfg(target_os = "windows")]
+    {
+        let n = name.to_lowercase();
+        // Prefer Wi-Fi before Ethernet; match EN + common RU "Беспроводная сеть" name.
+        if n.contains("wi-fi")
+            || n.contains("wlan")
+            || n.contains("wireless")
+            || n.contains("802.11")
+            || name.contains("Беспровод")
+        {
+            return 0;
+        }
+        if n.contains("ethernet") || n.contains("eth ") {
+            return 1;
+        }
         2
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        if name.starts_with("en0") || name.starts_with("wlan") || name.starts_with("wifi") {
+            0
+        } else if name.starts_with("en") || name.starts_with("eth") {
+            1
+        } else {
+            2
+        }
     }
 }
 

@@ -8,8 +8,10 @@ private let log = Logger(subsystem: "com.trackball-watch.app", category: "Bonjou
 
 /// Discovered desktop via mDNS/Bonjour (_tbp._udp.local).
 struct DiscoveredDesktop: Identifiable, Equatable {
-    let id: String          // service name (unique per desktop)
-    let name: String        // human-readable name (e.g. "Mac Pro")
+    /// Stable key: `device_id` from TXT when present, else Bonjour instance name.
+    let id: String
+    /// Bonjour instance name (e.g. TrackBall-cac7877e-00).
+    let name: String
     let host: String
     let port: UInt16
 
@@ -72,6 +74,16 @@ final class BonjourBrowser: ObservableObject {
         for result in results {
             guard case .service(let name, let type, let domain, _) = result.endpoint else { continue }
             log.info("Found service: \(name, privacy: .public)")
+
+            // Fast path: desktop hosts (e.g. Rust mdns-sd on Windows) often ship full TXT in the
+            // browse result. NetService.resolve can still fail for non-Apple responders — show the
+            // host immediately when TXT has host (+ optional port).
+            if let quick = Self.discoveredDesktopFromBrowseTXT(instanceName: name, metadata: result.metadata) {
+                Task { @MainActor [weak self] in
+                    self?.upsert(quick)
+                }
+            }
+
             let metadataHost = Self.hostFromBonjourMetadata(result.metadata)
             let resolver = ServiceResolver(name: name, type: type, domain: domain) { [weak self] desktop in
                 let preferredHost = Self.preferredHost(metadataHost: metadataHost, resolvedHost: desktop.host)
@@ -96,7 +108,8 @@ final class BonjourBrowser: ObservableObject {
             return nil
         })
         resolvers = resolvers.filter { activeNames.contains($0.key) }
-        discovered.removeAll { !activeNames.contains($0.id) }
+        // `id` is often `device_id` from TXT, not Bonjour instance name — match on `name`.
+        discovered.removeAll { !activeNames.contains($0.name) }
     }
 
     private func upsert(_ desktop: DiscoveredDesktop) {
@@ -107,7 +120,7 @@ final class BonjourBrowser: ObservableObject {
             // that differ only by service instance name/interface suffix.
             if desktop.name.count < discovered[sameEndpointIdx].name.count {
                 discovered[sameEndpointIdx] = DiscoveredDesktop(
-                    id: discovered[sameEndpointIdx].id,
+                    id: desktop.id,
                     name: desktop.name,
                     host: desktop.host,
                     port: desktop.port
@@ -132,13 +145,37 @@ final class BonjourBrowser: ObservableObject {
         return resolvedHost
     }
 
+    /// Case-insensitive TXT lookup (mDNS keys are often lowercase from non-Apple stacks).
+    private static func txtValue(_ txt: [String: String], key: String) -> String? {
+        if let v = txt[key] { return v }
+        return txt.first { $0.key.lowercased() == key.lowercased() }?.value
+    }
+
     private static func hostFromBonjourMetadata(_ metadata: NWBrowser.Result.Metadata) -> String? {
         guard case let .bonjour(txtRecord) = metadata else { return nil }
-        guard let host = txtRecord["host"]?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard let host = txtValue(txtRecord, "host")?.trimmingCharacters(in: .whitespacesAndNewlines),
               !host.isEmpty else {
             return nil
         }
         return host
+    }
+
+    /// Build a row from browse TXT alone (no NetService.resolve).
+    private static func discoveredDesktopFromBrowseTXT(
+        instanceName: String,
+        metadata: NWBrowser.Result.Metadata
+    ) -> DiscoveredDesktop? {
+        guard case let .bonjour(txt) = metadata else { return nil }
+        guard let hostRaw = txtValue(txt, "host")?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !hostRaw.isEmpty else {
+            return nil
+        }
+        guard let host = lanIPv4(from: hostRaw) else { return nil }
+        let portStr = txtValue(txt, "port") ?? "47474"
+        guard let port = UInt16(portStr) else { return nil }
+        let did = txtValue(txt, "device_id")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let stableId = (did?.isEmpty == false) ? did! : instanceName
+        return DiscoveredDesktop(id: stableId, name: instanceName, host: host, port: port)
     }
 
     private static func isRoutableHost(_ host: String) -> Bool {
@@ -213,10 +250,26 @@ final class BonjourBrowser: ObservableObject {
         private let onResolved: (DiscoveredDesktop) -> Void
 
         init(name: String, type: String, domain: String, onResolved: @escaping (DiscoveredDesktop) -> Void) {
-            self.service = NetService(domain: domain, type: type, name: name)
+            // NetService requires type/domain with trailing dots; NWBrowser sometimes omits them.
+            let dom = Self.normalizedDomain(domain)
+            let typ = Self.normalizedServiceType(type)
+            self.service = NetService(domain: dom, type: typ, name: name)
             self.onResolved = onResolved
             super.init()
             self.service.delegate = self
+        }
+
+        private static func normalizedDomain(_ domain: String) -> String {
+            var d = domain
+            if d.isEmpty { return "local." }
+            if !d.hasSuffix(".") { d += "." }
+            return d
+        }
+
+        private static func normalizedServiceType(_ type: String) -> String {
+            var t = type
+            if !t.hasSuffix(".") { t += "." }
+            return t
         }
 
         func start() {
@@ -244,7 +297,9 @@ final class BonjourBrowser: ObservableObject {
             }
 
             log.info("NetService resolved \(sender.name, privacy: .public) → \(host, privacy: .public):\(port, privacy: .public)")
-            onResolved(DiscoveredDesktop(id: sender.name, name: sender.name, host: host, port: port))
+            let did = Self.txtDeviceId(from: sender)
+            let stableId = (did?.isEmpty == false) ? did! : sender.name
+            onResolved(DiscoveredDesktop(id: stableId, name: sender.name, host: host, port: port))
             sender.stop()
         }
 
@@ -255,13 +310,27 @@ final class BonjourBrowser: ObservableObject {
         private static func txtHost(from service: NetService) -> String? {
             guard let txtRecord = service.txtRecordData() else { return nil }
             let txt = NetService.dictionary(fromTXTRecord: txtRecord)
-            guard let hostData = txt["host"],
-                  let host = String(data: hostData, encoding: .utf8)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines),
-                  !host.isEmpty else {
-                return nil
+            for key in txt.keys {
+                if key.lowercased() == "host", let data = txt[key],
+                   let host = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !host.isEmpty {
+                    return host
+                }
             }
-            return host
+            return nil
+        }
+
+        private static func txtDeviceId(from service: NetService) -> String? {
+            guard let txtRecord = service.txtRecordData() else { return nil }
+            let txt = NetService.dictionary(fromTXTRecord: txtRecord)
+            for key in txt.keys {
+                if key.lowercased() == "device_id", let data = txt[key],
+                   let s = String(data: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines), !s.isEmpty {
+                    return s
+                }
+            }
+            return nil
         }
 
         private static func ipv4Address(from addressData: Data) -> String? {
