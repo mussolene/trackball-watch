@@ -10,7 +10,7 @@
     "tauri": "npx tauri",
     "sync-version": "node ../../scripts/sync-version-from-git.mjs",
     "tauri:dev": "npx tauri dev",
-    "tauri:build": "npm run sync-version && npx tauri build && bash src-tauri/macos-resign-bundle.sh"
+    "tauri:build": "npm run sync-version && npx tauri build && node scripts/macos-resign-after-tauri.mjs"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^5.0.0",

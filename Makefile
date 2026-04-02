@@ -13,14 +13,19 @@ HOST_APP_DEST   := /Applications/$(HOST_APP_BUNDLE)
 APPLE_DERIVED_DATA := $(CURDIR)/.codex-derived/xcode
 
 XCODE_FLAGS  := CODE_SIGN_IDENTITY="-" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
-CARGO        := $(HOME)/.cargo/bin/cargo
+# Use rustup's cargo when present; fall back to PATH (Windows make often has no HOME)
+ifneq ($(wildcard $(HOME)/.cargo/bin/cargo),)
+  CARGO := $(HOME)/.cargo/bin/cargo
+else
+  CARGO := cargo
+endif
 
 # Prefer the first available Watch simulator (UUID only)
 WATCH_SIM    := $(shell xcrun simctl list devices available 2>/dev/null | \
                   grep 'Apple Watch' | head -1 | grep -oE '[A-F0-9-]{36}')
 
-.PHONY: all install build build-desktop install-host build-ios build-watch build-tools install-ios \
-        build-apple build-apple-watch build-apple-mobile install-mobile install-mobile-clean verify \
+.PHONY: all install build build-desktop build-windows install-host build-ios build-watch build-tools install-ios \
+        build-apple build-apple-watch build-apple-mobile install-mobile install-mobile-clean verify verify-windows \
         dev test test-rust test-swift lint fmt check xcodegen clean help
 
 # ── Main targets ──────────────────────────────────────────────────────────────
@@ -41,6 +46,10 @@ install: ## Install npm dependencies
 build: build-desktop build-apple build-tools ## Build all targets
 
 build-desktop: install ## Build desktop host (Tauri release)
+	cd $(HOST_APP_DIR) && CI=false npm run build && CI=false npm run tauri:build
+
+# Same as build-desktop but named for clarity on Windows/Linux (no Xcode; works with Git Bash make or WSL)
+build-windows: install ## Build desktop host only (Rust + Vite + Tauri; skip Apple targets)
 	cd $(HOST_APP_DIR) && CI=false npm run build && CI=false npm run tauri:build
 
 build-apple: build-apple-mobile build-apple-watch ## Build Apple client targets
@@ -145,6 +154,15 @@ verify: ## Fast CI-style check: cargo check + Rust tests + iOS build
 	$(MAKE) build-apple-mobile
 	@echo "==> xcodebuild (Apple watch)"
 	$(MAKE) build-apple-watch
+
+# Use on Windows/Linux CI agents without Xcode (Rust + latency-tester only)
+verify-windows: ## cargo check + Rust tests + tools check (no Apple builds)
+	@echo "==> cargo check (host)"
+	cd $(HOST_CORE_DIR) && $(CARGO) check --all-features
+	@echo "==> cargo test (host)"
+	cd $(HOST_CORE_DIR) && $(CARGO) test --all-features
+	@echo "==> cargo check (latency-tester)"
+	cd $(TOOLS_LATENCY_DIR) && $(CARGO) check
 
 # ── Lint & Format ─────────────────────────────────────────────────────────────
 
