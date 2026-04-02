@@ -153,7 +153,8 @@ final class BonjourBrowser: ObservableObject {
 
     private static func hostFromBonjourMetadata(_ metadata: NWBrowser.Result.Metadata) -> String? {
         guard case let .bonjour(txtRecord) = metadata else { return nil }
-        guard let host = txtValue(txtRecord, "host")?.trimmingCharacters(in: .whitespacesAndNewlines),
+        let txt = txtRecord.dictionary
+        guard let host = txtValue(txt, key: "host")?.trimmingCharacters(in: .whitespacesAndNewlines),
               !host.isEmpty else {
             return nil
         }
@@ -165,15 +166,16 @@ final class BonjourBrowser: ObservableObject {
         instanceName: String,
         metadata: NWBrowser.Result.Metadata
     ) -> DiscoveredDesktop? {
-        guard case let .bonjour(txt) = metadata else { return nil }
-        guard let hostRaw = txtValue(txt, "host")?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard case let .bonjour(txtRecord) = metadata else { return nil }
+        let txt = txtRecord.dictionary
+        guard let hostRaw = txtValue(txt, key: "host")?.trimmingCharacters(in: .whitespacesAndNewlines),
               !hostRaw.isEmpty else {
             return nil
         }
         guard let host = lanIPv4(from: hostRaw) else { return nil }
-        let portStr = txtValue(txt, "port") ?? "47474"
+        let portStr = txtValue(txt, key: "port") ?? "47474"
         guard let port = UInt16(portStr) else { return nil }
-        let did = txtValue(txt, "device_id")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let did = txtValue(txt, key: "device_id")?.trimmingCharacters(in: .whitespacesAndNewlines)
         let stableId = (did?.isEmpty == false) ? did! : instanceName
         return DiscoveredDesktop(id: stableId, name: instanceName, host: host, port: port)
     }
