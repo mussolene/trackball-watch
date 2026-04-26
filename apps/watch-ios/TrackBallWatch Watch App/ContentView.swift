@@ -6,51 +6,52 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 6) {
-                // Transport + host indicator row
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 10, height: 10)
-
-                    // Tappable host name — opens picker if multiple hosts
-                    Group {
-                        if hostStore.hosts.count > 1 {
-                            NavigationLink(destination: HostPickerView()
-                                .environmentObject(sessionManager)
-                                .environmentObject(hostStore)) {
-                                hostLabel
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            hostLabel
-                        }
-                    }
-
-                    Spacer()
-
-                    // Transport badge
-                    Text(transportBadge)
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(transportBadgeColor)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 1)
-                        .background(transportBadgeColor.opacity(0.15), in: Capsule())
-                }
-                .padding(.horizontal, 4)
-
-                Divider()
-
-                // Main input surface
+            Group {
                 if sessionManager.mode == .trackball {
                     TrackballView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .crownScrollHandler()
                 } else {
-                    InputCaptureView()
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Color.black.opacity(0.01))
-                        .crownScrollHandler()
+                    VStack(spacing: 6) {
+                        // Transport + host indicator row
+                        HStack(spacing: 6) {
+                            Circle()
+                                .fill(statusColor)
+                                .frame(width: 10, height: 10)
+
+                            // Tappable host name — opens picker if multiple hosts
+                            Group {
+                                if hostStore.hosts.count > 1 {
+                                    NavigationLink(destination: HostPickerView()
+                                        .environmentObject(sessionManager)
+                                        .environmentObject(hostStore)) {
+                                        hostLabel
+                                    }
+                                    .buttonStyle(.plain)
+                                } else {
+                                    hostLabel
+                                }
+                            }
+
+                            Spacer()
+
+                            // Transport badge
+                            Text(transportBadge)
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundStyle(transportBadgeColor)
+                                .padding(.horizontal, 4)
+                                .padding(.vertical, 1)
+                                .background(transportBadgeColor.opacity(0.15), in: Capsule())
+                        }
+                        .padding(.horizontal, 4)
+
+                        Divider()
+
+                        InputCaptureView()
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .background(Color.black.opacity(0.01))
+                            .crownScrollHandler()
+                    }
                 }
             }
             .padding(4)
