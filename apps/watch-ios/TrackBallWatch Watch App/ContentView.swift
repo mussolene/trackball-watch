@@ -9,7 +9,6 @@ struct ContentView: View {
             TrackballView()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .crownScrollHandler()
-            .padding(4)
             .navigationTitle("TrackBall")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
