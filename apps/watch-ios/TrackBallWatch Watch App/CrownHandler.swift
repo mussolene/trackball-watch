@@ -47,21 +47,3 @@ extension View {
         modifier(CrownHandlerModifier())
     }
 }
-
-// MARK: - Long press: mode switch
-
-struct ModeSwitchGesture: ViewModifier {
-    @EnvironmentObject var sessionManager: WatchSessionManager
-
-    func body(content: Content) -> some View {
-        content.onLongPressGesture(minimumDuration: 0.8) {
-            sessionManager.toggleMode()
-        }
-    }
-}
-
-extension View {
-    func modeSwitchOnLongPress() -> some View {
-        modifier(ModeSwitchGesture())
-    }
-}

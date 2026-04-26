@@ -20,12 +20,10 @@ final class WatchSessionManager: NSObject, ObservableObject {
         case none
     }
 
-    enum InputMode  { case trackpad, trackball }
     enum WearSide { case leftWrist, rightWrist }
 
     @Published var connectionState: ConnectionState = .disconnected
     @Published var transportMode: TransportMode = .none
-    @Published var mode: InputMode = .trackpad
     @Published var wearSide: WearSide = .leftWrist
     @Published var trackballFriction: Double = 0.92
     @Published var coastingState: (vx: Double, vy: Double, active: Bool) = (0, 0, false)
@@ -218,23 +216,16 @@ final class WatchSessionManager: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - Mode
-
     /// Ask the iPhone companion to run a fresh Bonjour scan and push results.
     func requestPhoneScan() {
         guard let session = wcSession, session.activationState == .activated, session.isReachable else { return }
         session.sendMessage(["cmd": "scan"], replyHandler: nil, errorHandler: nil)
     }
 
-    func toggleMode() {
-        mode = (mode == .trackpad) ? .trackball : .trackpad
-        WKInterfaceDevice.current().play(.click)
-    }
-
     // MARK: - Config from desktop
 
     func applyConfig(mode modeByte: UInt8, frictionCenti: UInt8) {
-        mode = modeByte == 1 ? .trackball : .trackpad
+        _ = modeByte
         trackballFriction = min(0.99, max(0.5, Double(frictionCenti) / 100.0))
     }
 
@@ -265,9 +256,6 @@ extension WatchSessionManager: WCSessionDelegate {
     /// Receive CONFIG / STATE_FEEDBACK / mode push from iPhone (WCSession relay path).
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         Task { @MainActor in
-            if let modeStr = message["mode"] as? String {
-                self.mode = modeStr == "trackball" ? .trackball : .trackpad
-            }
             if let raw = message["friction"],
                let friction = (raw as? NSNumber)?.doubleValue ?? raw as? Double {
                 self.trackballFriction = min(0.99, max(0.5, friction))

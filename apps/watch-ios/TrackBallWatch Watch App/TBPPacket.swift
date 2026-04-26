@@ -90,6 +90,13 @@ struct TBPPacket {
     }
 }
 
+enum TouchPhase: UInt8 {
+    case began = 1
+    case moved = 2
+    case ended = 3
+    case cancelled = 4
+}
+
 // MARK: - Data helpers
 
 private extension Data {
