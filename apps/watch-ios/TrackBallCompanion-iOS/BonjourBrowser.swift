@@ -223,6 +223,7 @@ final class BonjourBrowser: ObservableObject {
         guard rc == 0, let first = res else { return nil }
         defer { freeaddrinfo(first) }
 
+        var privateFallback: String?
         var ptr: UnsafeMutablePointer<addrinfo>? = first
         while let ai = ptr {
             if ai.pointee.ai_family == AF_INET,
@@ -231,12 +232,17 @@ final class BonjourBrowser: ObservableObject {
                 var buf = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
                 if inet_ntop(AF_INET, &sin.sin_addr, &buf, socklen_t(INET_ADDRSTRLEN)) != nil {
                     let ip = String(cString: buf)
-                    if lanIPv4(from: ip) != nil { return ip }
+                    if ip.hasPrefix("192.168.") {
+                        return ip
+                    }
+                    if privateFallback == nil, lanIPv4(from: ip) != nil {
+                        privateFallback = ip
+                    }
                 }
             }
             ptr = ai.pointee.ai_next
         }
-        return nil
+        return privateFallback
     }
 
     private static func ipv4Octets(_ host: String) -> (Int, Int, Int, Int)? {

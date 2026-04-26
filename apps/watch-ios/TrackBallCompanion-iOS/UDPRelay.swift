@@ -237,8 +237,10 @@ final class UDPRelay {
             if ai.pointee.ai_family == AF_INET,
                let ip = ipv4String(from: ai.pointee.ai_addr),
                isRoutableIPv4(ip) {
+                if ip.hasPrefix("192.168.") {
+                    return ip
+                }
                 bestIPv4 = ip
-                break
             } else if ai.pointee.ai_family == AF_INET6,
                       let ip = ipv6String(from: ai.pointee.ai_addr),
                       isRoutableIPv6(ip),

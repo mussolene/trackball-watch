@@ -158,6 +158,7 @@ final class PairingService: ObservableObject {
         guard rc == 0, let first = res else { return nil }
         defer { freeaddrinfo(first) }
 
+        var privateFallback: String?
         var ptr: UnsafeMutablePointer<addrinfo>? = first
         while let ai = ptr {
             if ai.pointee.ai_family == AF_INET, let sa = ai.pointee.ai_addr {
@@ -171,13 +172,18 @@ final class PairingService: ObservableObject {
                             p[0] == 10 ||
                             (p[0] == 172 && (16...31).contains(p[1])) ||
                             (p[0] == 192 && p[1] == 168)
-                        if isPrivate { return ip }
+                        if p[0] == 192 && p[1] == 168 {
+                            return ip
+                        }
+                        if isPrivate && privateFallback == nil {
+                            privateFallback = ip
+                        }
                     }
                 }
             }
             ptr = ai.pointee.ai_next
         }
-        return nil
+        return privateFallback
     }
 
     // MARK: - Core pairing flow

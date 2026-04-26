@@ -609,7 +609,7 @@ fn local_lan_bindings() -> Vec<LanBinding> {
             continue;
         }
         let name = iface.name;
-        let prio = interface_priority(&name);
+        let prio = lan_address_priority(ip) * 10 + interface_priority(&name);
         candidates.push((prio, ip.to_string(), name));
     }
 
@@ -623,6 +623,13 @@ fn local_lan_bindings() -> Vec<LanBinding> {
     });
     candidates.dedup_by(|a, b| a.1 == b.1 && a.2 == b.2);
 
+    if candidates
+        .iter()
+        .any(|(_, ip, _)| ip.starts_with("192.168."))
+    {
+        candidates.retain(|(_, ip, _)| ip.starts_with("192.168."));
+    }
+
     candidates
         .into_iter()
         .map(|(_, ip, iface)| LanBinding {
@@ -635,6 +642,17 @@ fn local_lan_bindings() -> Vec<LanBinding> {
 fn is_rfc1918_ipv4(ip: Ipv4Addr) -> bool {
     let o = ip.octets();
     o[0] == 10 || (o[0] == 172 && (16..=31).contains(&o[1])) || (o[0] == 192 && o[1] == 168)
+}
+
+fn lan_address_priority(ip: Ipv4Addr) -> u8 {
+    let o = ip.octets();
+    if o[0] == 192 && o[1] == 168 {
+        0
+    } else if o[0] == 10 {
+        1
+    } else {
+        2
+    }
 }
 
 fn interface_priority(name: &str) -> u8 {
