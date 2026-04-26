@@ -32,7 +32,7 @@ struct TrackballView: View {
 
     var body: some View {
         GeometryReader { geo in
-            trackballPanel(containerSize: geo.size, isLandscape: geo.size.width > geo.size.height)
+            trackballPanel(containerSize: geo.size)
         }
         .background(
             LinearGradient(
@@ -51,9 +51,8 @@ struct TrackballView: View {
         .onReceive(tick, perform: tickPhysics)
     }
 
-    private func trackballPanel(containerSize: CGSize, isLandscape: Bool) -> some View {
-        let portraitHeight = min(max(260, containerSize.width - 40), containerSize.height * 0.52)
-        return TrackballRemoteSurface(
+    private func trackballPanel(containerSize: CGSize) -> some View {
+        TrackballRemoteSurface(
             engine: engine,
             fingerLocation: visibleFingerLocation,
             hostLabel: currentHostLabel,
@@ -71,13 +70,8 @@ struct TrackballView: View {
                 currentTrackballDiameter = diameter
             }
         )
-        .frame(
-            maxWidth: .infinity,
-            minHeight: isLandscape ? 260 : portraitHeight,
-            maxHeight: isLandscape ? .infinity : portraitHeight,
-            alignment: .top
-        )
-        .padding(20)
+        .frame(width: containerSize.width, height: containerSize.height)
+        .ignoresSafeArea()
     }
 }
 
