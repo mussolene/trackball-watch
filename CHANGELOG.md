@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-04-26
+
+### Added
+
+- **iOS Companion:** Added a side scroll-wheel control to the trackball remote that sends TBP crown packets to the desktop.
+
+### Fixed
+
+- **CI:** Fixed Rust 1.94 clippy failures in the mDNS backend.
+- **CI:** Pointed tarpaulin at the built frontend instead of `target/` temp files so coverage can compile reliably.
+- **iOS Companion:** Adapted Bonjour TXT parsing to the current `NWTXTRecord` API.
+
 ## [1.0.4] - 2026-03-31
 
 ### Fixed
