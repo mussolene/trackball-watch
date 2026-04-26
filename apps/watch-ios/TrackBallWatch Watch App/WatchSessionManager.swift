@@ -201,14 +201,11 @@ final class WatchSessionManager: NSObject, ObservableObject {
             return
         }
 
-        // 2. WCSession relay fallback
+        // 2. WCSession relay fallback. Live input must never use transferUserInfo:
+        // delayed delivery replays stale pointer packets and feels unlike the iPhone debug remote.
         guard let session = wcSession, session.activationState == .activated else { return }
         if session.isReachable {
-            session.sendMessage(["d": data as Any], replyHandler: nil) { [weak self] _ in
-                self?.wcSession?.transferUserInfo(["d": data])
-            }
-        } else {
-            session.transferUserInfo(["d": data])
+            session.sendMessage(["d": data as Any], replyHandler: nil, errorHandler: nil)
         }
     }
 

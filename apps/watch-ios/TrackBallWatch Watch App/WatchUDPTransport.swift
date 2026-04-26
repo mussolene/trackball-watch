@@ -27,8 +27,6 @@ final class WatchUDPTransport {
     private let port: UInt16
     private var connection: NWConnection?
     private let queue = DispatchQueue(label: "com.trackball.watch.udp", qos: .userInteractive)
-    private var pendingOutbound: [Data] = []
-    private let maxPending = 64
     private var handshakeSeq: UInt16 = 0
 
     init(host: String, port: UInt16) {
@@ -63,17 +61,14 @@ final class WatchUDPTransport {
                         let hs = self.buildHandshake()
                         self.queue.async { conn.send(content: hs, completion: .contentProcessed { _ in }) }
                         self.receiveLoop()
-                        self.flushPending()
                     }
                 case .failed(let err):
                     log.error("UDP failed: \(err, privacy: .public)")
-                    self.pendingOutbound.removeAll()
                     self.updateState(.failed(err.localizedDescription))
                 case .waiting(let err):
                     log.warning("UDP waiting: \(err, privacy: .public)")
                     self.updateState(.waiting(err.localizedDescription))
                 case .cancelled:
-                    self.pendingOutbound.removeAll()
                     self.updateState(.cancelled)
                 @unknown default:
                     break
@@ -86,23 +81,13 @@ final class WatchUDPTransport {
     }
 
     func send(_ data: Data) {
-        guard state != .cancelled else { return }
-        if state == .ready, let conn = connection {
-            queue.async { conn.send(content: data, completion: .contentProcessed { _ in }) }
-        } else if case .connecting = state {
-            // Buffer packets until transport is ready
-            if pendingOutbound.count >= maxPending {
-                pendingOutbound.removeFirst(pendingOutbound.count - maxPending + 1)
-            }
-            pendingOutbound.append(data)
-        }
-        // .failed / .waiting / .idle: drop (reconnect will re-establish session)
+        guard state == .ready, let conn = connection else { return }
+        queue.async { conn.send(content: data, completion: .contentProcessed { _ in }) }
     }
 
     func cancel() {
         connection?.cancel()
         connection = nil
-        pendingOutbound.removeAll()
         updateState(.cancelled)
     }
 
@@ -129,14 +114,6 @@ final class WatchUDPTransport {
             }
             if error == nil { Task { @MainActor [weak self] in self?.receiveLoop() } }
         }
-    }
-
-    private func flushPending() {
-        guard let conn = connection, !pendingOutbound.isEmpty else { return }
-        let batch = pendingOutbound
-        pendingOutbound.removeAll(keepingCapacity: true)
-        log.info("Flushing \(batch.count, privacy: .public) queued UDP packets")
-        queue.async { batch.forEach { conn.send(content: $0, completion: .contentProcessed { _ in }) } }
     }
 
     private func buildHandshake() -> Data {
