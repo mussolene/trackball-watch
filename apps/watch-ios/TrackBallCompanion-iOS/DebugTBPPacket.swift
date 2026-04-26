@@ -39,6 +39,13 @@ struct DebugTBPPacket {
         return buildPacket(type: 0x02, payload: payload)
     }
 
+    mutating func crown(delta: Int16, velocity: Int16) -> Data {
+        var payload = Data(capacity: 4)
+        payload.appendLE(delta)
+        payload.appendLE(velocity)
+        return buildPacket(type: 0x03, payload: payload)
+    }
+
     mutating func gesture(_ type: DebugGestureType, fingers: UInt8 = 1, param1: Int16 = 0, param2: Int16 = 0) -> Data {
         var payload = Data(capacity: 6)
         payload.append(type.rawValue)

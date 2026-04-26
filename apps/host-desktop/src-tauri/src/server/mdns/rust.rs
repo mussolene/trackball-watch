@@ -7,7 +7,7 @@ use mdns_sd::{ServiceDaemon, ServiceInfo};
 use std::io;
 
 fn map_mdns_err(e: mdns_sd::Error) -> io::Error {
-    io::Error::new(io::ErrorKind::Other, format!("{e}"))
+    io::Error::other(format!("{e}"))
 }
 
 fn host_fqdn() -> String {

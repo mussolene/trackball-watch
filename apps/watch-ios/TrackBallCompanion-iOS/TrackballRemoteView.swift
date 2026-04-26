@@ -26,11 +26,15 @@ struct TrackballRemoteView: View {
     @State private var currentTrackballDiameter: CGFloat = 300
     @State private var isStreamingCoastTouch = false
     @State private var isPrimaryButtonHeld = false
+    @State private var isScrollDragging = false
+    @State private var lastScrollLocationY: CGFloat?
+    @State private var lastScrollTimestamp: Date = .now
 
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
     private let impactFeedback = UIImpactFeedbackGenerator(style: .light)
     private let tapFeedback = UIImpactFeedbackGenerator(style: .soft)
     private let doubleTapFeedback = UIImpactFeedbackGenerator(style: .medium)
+    private let scrollFeedback = UISelectionFeedbackGenerator()
 
     var body: some View {
         GeometryReader { geo in
@@ -76,6 +80,7 @@ struct TrackballRemoteView: View {
             impactFeedback.prepare()
             tapFeedback.prepare()
             doubleTapFeedback.prepare()
+            scrollFeedback.prepare()
             ensureDesktopRelayReady()
         }
         .onChange(of: sendToDesktop) { _, enabled in
@@ -106,11 +111,14 @@ struct TrackballRemoteView: View {
             fingerLocation: visibleFingerLocation,
             hostLabel: currentHostLabel,
             canSwitchHosts: pairing.connections.count > 1,
+            isScrollDragging: isScrollDragging,
             onChanged: onDragChanged,
             onEnded: onDragEnded,
             onTap: handleTapGesture,
             onDoubleTap: handleDoubleTapGesture,
             onLongPress: handleLongPressGesture,
+            onScrollChanged: handleScrollChanged,
+            onScrollEnded: handleScrollEnded,
             onSwitchHost: switchToNextHost,
             onDiameterChanged: { diameter in
                 currentTrackballDiameter = diameter
@@ -343,6 +351,49 @@ struct TrackballRemoteView: View {
         sendGesture(.longPress)
     }
 
+    private func handleScrollChanged(_ value: DragGesture.Value) {
+        let now = Date.now
+        if !isScrollDragging {
+            isScrollDragging = true
+            lastScrollLocationY = value.location.y
+            lastScrollTimestamp = now
+            lastGesture = "Scroll"
+            impactFeedback.impactOccurred(intensity: 0.35)
+            return
+        }
+
+        guard let previousY = lastScrollLocationY else {
+            lastScrollLocationY = value.location.y
+            lastScrollTimestamp = now
+            return
+        }
+
+        let deltaPoints = previousY - value.location.y
+        let dt = max(1e-3, now.timeIntervalSince(lastScrollTimestamp))
+        lastScrollLocationY = value.location.y
+        lastScrollTimestamp = now
+
+        let rawDelta = Int((deltaPoints * 4.0).rounded())
+        guard rawDelta != 0 else { return }
+
+        let velocity = Int((Double(rawDelta) / dt / 10.0).rounded())
+        sendCrown(
+            delta: Int16(clamping: rawDelta),
+            velocity: Int16(clamping: velocity)
+        )
+        scrollFeedback.selectionChanged()
+        scrollFeedback.prepare()
+    }
+
+    private func handleScrollEnded() {
+        isScrollDragging = false
+        lastScrollLocationY = nil
+        lastScrollTimestamp = .now
+        if lastGesture == "Scroll" {
+            lastGesture = "Scroll End"
+        }
+    }
+
     private func send(_ events: [TrackballEngineEvent]) {
         for event in events {
             switch event {
@@ -379,6 +430,13 @@ struct TrackballRemoteView: View {
         ensureDesktopRelayReady()
         Self.fileTrace.log("gesture \(gesture.rawValue)")
         relay.relay(packetBuilder.gesture(gesture))
+    }
+
+    private func sendCrown(delta: Int16, velocity: Int16) {
+        guard sendToDesktop else { return }
+        ensureDesktopRelayReady()
+        Self.fileTrace.log("crown delta=\(delta) velocity=\(velocity)")
+        relay.relay(packetBuilder.crown(delta: delta, velocity: velocity))
     }
 
     private func companionTouchPhase(_ phase: TrackballEngineTouchPhase) -> DebugTouchPhase {
@@ -443,22 +501,32 @@ private struct TrackballRemoteSurface: View {
     let fingerLocation: CGPoint?
     let hostLabel: String
     let canSwitchHosts: Bool
+    let isScrollDragging: Bool
     let onChanged: (DragGesture.Value, CGFloat) -> Void
     let onEnded: (DragGesture.Value, CGFloat) -> Void
     let onTap: () -> Void
     let onDoubleTap: () -> Void
     let onLongPress: () -> Void
+    let onScrollChanged: (DragGesture.Value) -> Void
+    let onScrollEnded: () -> Void
     let onSwitchHost: () -> Void
     let onDiameterChanged: (CGFloat) -> Void
 
     var body: some View {
         GeometryReader { geo in
             let haloScale: CGFloat = 1.22
-            let diameter = max(
-                180,
-                min((geo.size.width - 24) / haloScale, (geo.size.height - 24) / haloScale, 420)
+            let padInset: CGFloat = 24
+            let layout = Self.layoutForPad(
+                width: geo.size.width,
+                height: geo.size.height,
+                haloScale: haloScale,
+                padInset: padInset
             )
-            let outerDiameter = diameter * haloScale
+            let diameter = layout.diameter
+            let outerDiameter = layout.outerDiameter
+            let scrollWheelGap = layout.scrollWheelGap
+            let scrollWheelWidth = layout.scrollWheelWidth
+            let scrollWheelHeight = layout.scrollWheelHeight
             // DragGesture is on the inner `outerDiameter` ZStack, so `value.location` is in that
             // square's local space — not the full `geo`. The globe Canvas is centered inside it.
             let globeInset = (outerDiameter - diameter) / 2
@@ -469,67 +537,87 @@ private struct TrackballRemoteSurface: View {
                 RoundedRectangle(cornerRadius: 28)
                     .fill(Color.white.opacity(0.04))
 
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                        .frame(width: diameter * 1.22, height: diameter * 1.22)
+                HStack(alignment: .center, spacing: scrollWheelGap) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                            .frame(width: diameter * 1.22, height: diameter * 1.22)
 
-                    Circle()
-                        .stroke(Color.white.opacity(0.18),
-                                style: StrokeStyle(
-                                    lineWidth: max(5, diameter * 0.05),
-                                    lineCap: .round
-                                ))
-                        .frame(width: diameter * 1.08, height: diameter * 1.08)
+                        Circle()
+                            .stroke(Color.white.opacity(0.18),
+                                    style: StrokeStyle(
+                                        lineWidth: max(5, diameter * 0.05),
+                                        lineCap: .round
+                                    ))
+                            .frame(width: diameter * 1.08, height: diameter * 1.08)
 
-                    TrackballGlobeView(
-                        orientation: engine.orientation,
-                        diameter: diameter,
-                        fingerLocation: fingerInGlobeCanvas
-                    )
-                }
-                .frame(width: outerDiameter, height: outerDiameter)
-                .overlay {
-                    Circle()
-                        .fill(Color.clear)
-                        .frame(width: diameter, height: diameter)
-                        .contentShape(Circle())
-                        .simultaneousGesture(
-                            ExclusiveGesture(
-                                TapGesture(count: 2),
-                                TapGesture(count: 1)
+                        TrackballGlobeView(
+                            orientation: engine.orientation,
+                            diameter: diameter,
+                            fingerLocation: fingerInGlobeCanvas
+                        )
+                    }
+                    .frame(width: outerDiameter, height: outerDiameter)
+                    .overlay {
+                        Circle()
+                            .fill(Color.clear)
+                            .frame(width: diameter, height: diameter)
+                            .contentShape(Circle())
+                            .simultaneousGesture(
+                                ExclusiveGesture(
+                                    TapGesture(count: 2),
+                                    TapGesture(count: 1)
+                                )
+                                .onEnded { result in
+                                    switch result {
+                                    case .first:
+                                        onDoubleTap()
+                                    case .second:
+                                        onTap()
+                                    }
+                                }
                             )
-                            .onEnded { result in
-                                switch result {
-                                case .first:
-                                    onDoubleTap()
-                                case .second:
-                                    onTap()
+                            .simultaneousGesture(
+                                LongPressGesture(minimumDuration: 0.48)
+                                    .onEnded { _ in
+                                        onLongPress()
+                                    }
+                            )
+                    }
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                            .onChanged { value in
+                                if !engine.isDragging,
+                                   !isInsideTrackball(value.location, diameter: diameter, outerDiameter: outerDiameter) {
+                                    return
                                 }
+                                onChanged(value, diameter)
                             }
-                        )
-                        .simultaneousGesture(
-                            LongPressGesture(minimumDuration: 0.48)
-                                .onEnded { _ in
-                                    onLongPress()
-                                }
-                        )
+                            .onEnded { value in
+                                guard engine.isDragging else { return }
+                                onEnded(value, diameter)
+                            }
+                    )
+
+                    MouseScrollWheelControl(
+                        isActive: isScrollDragging,
+                        wheelHeight: scrollWheelHeight,
+                        wheelWidth: scrollWheelWidth
+                    )
+                    .frame(width: scrollWheelWidth, height: scrollWheelHeight)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                            .onChanged(onScrollChanged)
+                            .onEnded { _ in
+                                onScrollEnded()
+                            }
+                    )
+                    .accessibilityLabel("Scroll")
+                    .accessibilityHint("Drag up or down to scroll the desktop")
                 }
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                        .onChanged { value in
-                            if !engine.isDragging,
-                               !isInsideTrackball(value.location, diameter: diameter, outerDiameter: outerDiameter) {
-                                return
-                            }
-                            onChanged(value, diameter)
-                        }
-                        .onEnded { value in
-                            guard engine.isDragging else { return }
-                            onEnded(value, diameter)
-                        }
-                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .topTrailing) {
@@ -568,6 +656,137 @@ private struct TrackballRemoteSurface: View {
         let radius = diameter * 0.5
         let center = CGPoint(x: outerDiameter * 0.5, y: outerDiameter * 0.5)
         return hypot(location.x - center.x, location.y - center.y) <= radius
+    }
+
+    /// Sizes the ball so the outer rim + gap + scroll wheel fit the pad; keeps wheel beside the bezel.
+    private static func layoutForPad(
+        width: CGFloat,
+        height: CGFloat,
+        haloScale: CGFloat,
+        padInset: CGFloat
+    ) -> (
+        diameter: CGFloat,
+        outerDiameter: CGFloat,
+        scrollWheelGap: CGFloat,
+        scrollWheelWidth: CGFloat,
+        scrollWheelHeight: CGFloat
+    ) {
+        let maxSide = min(width - padInset, height - padInset)
+        var diameter = max(180, min(maxSide / haloScale, 420))
+        var outerDiameter = diameter * haloScale
+        var scrollWheelGap = max(8, min(14, outerDiameter * 0.035))
+        var scrollWheelWidth = max(22, min(30, outerDiameter * 0.082))
+        while diameter > 120
+            && outerDiameter + scrollWheelGap + scrollWheelWidth > width - padInset {
+            diameter -= 4
+            outerDiameter = diameter * haloScale
+            scrollWheelGap = max(8, min(14, outerDiameter * 0.035))
+            scrollWheelWidth = max(22, min(30, outerDiameter * 0.082))
+        }
+        let scrollWheelHeight = min(
+            max(130, outerDiameter * 0.88),
+            min(outerDiameter * 0.96, height - 40)
+        )
+        return (diameter, outerDiameter, scrollWheelGap, scrollWheelWidth, scrollWheelHeight)
+    }
+}
+
+/// Side-mounted scroll wheel beside the trackball (mouse-style), not a full-height rail.
+private struct MouseScrollWheelControl: View {
+    let isActive: Bool
+    let wheelHeight: CGFloat
+    let wheelWidth: CGFloat
+
+    private var ridgeCount: Int {
+        let n = Int((wheelHeight / 14).rounded(.down))
+        return max(5, min(11, n))
+    }
+
+    var body: some View {
+        let corner = wheelWidth * 0.42
+        ZStack {
+            // Housing slot (wheel sits in a shallow groove like on a mouse shell).
+            RoundedRectangle(cornerRadius: corner + 3)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.06),
+                            Color.white.opacity(0.02)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: corner + 3)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                )
+                .padding(-3)
+
+            // Wheel body — vertical cylinder seen from the side: horizontal knurling.
+            RoundedRectangle(cornerRadius: corner)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(white: 0.22).opacity(isActive ? 1.0 : 0.92),
+                            Color(white: 0.10).opacity(isActive ? 1.0 : 0.88),
+                            Color(white: 0.06).opacity(0.95)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: corner)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(isActive ? 0.38 : 0.22),
+                                    Color.white.opacity(0.06)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .shadow(color: .black.opacity(0.45), radius: isActive ? 5 : 3, y: 2)
+
+            VStack(spacing: max(3, wheelHeight * 0.022)) {
+                ForEach(0 ..< ridgeCount, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 0.8)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(isActive ? 0.42 : 0.26),
+                                    Color.white.opacity(0.10)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(height: max(1.5, wheelWidth * 0.12))
+                        .opacity(i % 2 == 0 ? 1.0 : 0.72)
+                }
+            }
+            .padding(.vertical, wheelHeight * 0.07)
+            .padding(.horizontal, wheelWidth * 0.14)
+
+            // Subtle end caps (wheel rim).
+            VStack {
+                Capsule()
+                    .fill(Color.white.opacity(isActive ? 0.20 : 0.12))
+                    .frame(height: 2)
+                    .padding(.horizontal, wheelWidth * 0.12)
+                Spacer()
+                Capsule()
+                    .fill(Color.white.opacity(isActive ? 0.16 : 0.10))
+                    .frame(height: 2)
+                    .padding(.horizontal, wheelWidth * 0.12)
+            }
+            .padding(.vertical, 2)
+        }
+        .frame(width: wheelWidth, height: wheelHeight)
     }
 }
 

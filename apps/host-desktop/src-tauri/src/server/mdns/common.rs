@@ -12,8 +12,6 @@ pub fn sanitize_txt_ascii(s: &str) -> String {
         .map(|c| {
             if c == ' ' {
                 '_'
-            } else if matches!(c, 'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.') {
-                c
             } else if c.is_ascii() && !c.is_control() {
                 c
             } else {

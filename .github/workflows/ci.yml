@@ -131,8 +131,9 @@ jobs:
       - name: Run coverage
         working-directory: apps/host-desktop/src-tauri
         env:
-          # tarpaulin compiles in an isolated workspace where ../dist may not exist
-          TAURI_CONFIG: '{"build":{"frontendDist":"."}}'
+          # Keep Tauri pointed at the built frontend; "." includes target/ temp files that
+          # tarpaulin creates and removes during instrumentation.
+          TAURI_CONFIG: '{"build":{"frontendDist":"../dist"}}'
         run: cargo tarpaulin --out Xml --output-dir coverage
 
       - name: Upload to Codecov
