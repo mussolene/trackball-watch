@@ -18,7 +18,7 @@
     {#if status === 'connected'}
       <span class="peer" title="Current relay endpoint">{peer?.addr ?? 'relay active'}</span>
     {:else}
-      <span class="hint">Open iPhone app, then touch watch trackpad.</span>
+      <span class="hint">Open iPhone app, then touch watch trackball.</span>
     {/if}
   </div>
 

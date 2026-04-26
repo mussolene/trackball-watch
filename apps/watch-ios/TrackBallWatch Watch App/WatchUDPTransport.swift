@@ -17,7 +17,6 @@ final class WatchUDPTransport {
         case cancelled
     }
 
-    var onConfigPacket: ((UInt8, UInt8) -> Void)?
     var onStateFeedback: ((Bool, Double, Double) -> Void)?
     var onStateChanged: ((State) -> Void)?
 
@@ -120,9 +119,7 @@ final class WatchUDPTransport {
                 let packetType = data[2]
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    if packetType == 0x12, data.count >= 10 {
-                        self.onConfigPacket?(data[8], data[9])
-                    } else if packetType == 0x13, data.count >= 13 {
+                    if packetType == 0x13, data.count >= 13 {
                         let isCoasting = data[8] != 0
                         let vxFP = Int16(bitPattern: UInt16(data[9]) | (UInt16(data[10]) << 8))
                         let vyFP = Int16(bitPattern: UInt16(data[11]) | (UInt16(data[12]) << 8))

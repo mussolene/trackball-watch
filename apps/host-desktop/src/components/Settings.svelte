@@ -1,6 +1,5 @@
 <script lang="ts">
   import { createEventDispatcher } from 'svelte';
-  import { invoke } from '@tauri-apps/api/core';
 
   export let config: any;
   const dispatch = createEventDispatcher();
@@ -20,35 +19,10 @@
     save();
   }
 
-  function setMode(mode: string) {
-    config.mode = mode;
-    save();
-    invoke('push_mode').catch(() => {});
-  }
-
   $: sensitivityPct = Math.round(config?.sensitivity * 100) ?? 100;
-  $: trackballMode = config?.mode === 'trackball';
 </script>
 
 <div class="settings">
-  <section>
-    <h3>Input Mode</h3>
-    <div class="button-group">
-      <button
-        class:active={config.mode === 'trackpad'}
-        on:click={() => setMode('trackpad')}
-      >
-        Trackpad
-      </button>
-      <button
-        class:active={config.mode === 'trackball'}
-        on:click={() => setMode('trackball')}
-      >
-        Trackball
-      </button>
-    </div>
-  </section>
-
   <section>
     <h3>Sensitivity <span class="value">{sensitivityPct}%</span></h3>
     <input
@@ -70,7 +44,7 @@
     </select>
   </section>
 
-  <section class="friction-slot" class:friction-dimmed={!trackballMode}>
+  <section class="friction-slot">
     <h3>Trackball friction <span class="value">{Math.round(config.trackball_friction * 100)}%</span></h3>
     <input
       type="range"
@@ -79,9 +53,8 @@
       step="0.01"
       bind:value={config.trackball_friction}
       on:change={save}
-      disabled={!trackballMode}
     />
-    <small>{trackballMode ? 'Higher = longer coasting' : 'Switch to Trackball mode to adjust coasting.'}</small>
+    <small>Higher = longer coasting</small>
   </section>
 
   <section>
@@ -185,40 +158,6 @@
     color: #aeaeb2;
   }
 
-  .button-group {
-    display: flex;
-    gap: 8px;
-  }
-
-  .button-group button {
-    flex: 1;
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 8px;
-    background: white;
-    cursor: pointer;
-    font-size: 14px;
-    transition: all 0.15s;
-    color: #1a1a1a;
-  }
-  :global(html[data-theme="dark"]) .button-group button {
-    background: #2c2c2e;
-    border-color: #48484a;
-    color: #f2f2f7;
-  }
-
-  .button-group button.active {
-    background: #007aff;
-    color: white;
-    border-color: #007aff;
-  }
-  :global(html[data-theme="dark"]) .button-group button.active {
-    background: #0a84ff;
-    color: #ffffff;
-    border-color: #5ac8fa;
-    box-shadow: 0 0 0 1px rgba(90, 200, 250, 0.35);
-  }
-
   input[type="range"] {
     width: 100%;
     accent-color: #007aff;
@@ -254,10 +193,6 @@
 
   .friction-slot {
     min-height: 88px;
-  }
-
-  .friction-dimmed {
-    opacity: 0.55;
   }
 
   .port-input {

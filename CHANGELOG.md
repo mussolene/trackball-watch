@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-04-26
+
+### Removed
+
+- **Desktop Host:** Removed the input mode switch and all legacy trackpad processing. The host now treats watch touch input as the trackball surface only.
+- **Apple clients:** Removed the old desktop-to-phone/watch CONFIG mode relay path that is no longer emitted by the host.
+
 ## [1.0.5] - 2026-04-26
 
 ### Added

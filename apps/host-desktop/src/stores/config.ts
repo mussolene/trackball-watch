@@ -2,7 +2,6 @@ import { writable } from 'svelte/store';
 
 export interface AppConfig {
   sensitivity: number;
-  mode: 'trackpad' | 'trackball';
   accel: {
     curve: 's_curve' | 'linear' | 'quadratic';
     sensitivity: number;

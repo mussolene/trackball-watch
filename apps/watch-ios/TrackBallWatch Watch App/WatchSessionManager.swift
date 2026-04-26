@@ -25,7 +25,6 @@ final class WatchSessionManager: NSObject, ObservableObject {
     @Published var connectionState: ConnectionState = .disconnected
     @Published var transportMode: TransportMode = .none
     @Published var wearSide: WearSide = .leftWrist
-    @Published var trackballFriction: Double = 0.92
     @Published var coastingState: (vx: Double, vy: Double, active: Bool) = (0, 0, false)
 
     // MARK: - Private
@@ -121,9 +120,6 @@ final class WatchSessionManager: NSObject, ObservableObject {
         HostStore.shared.activate(config)
 
         let transport = WatchUDPTransport(host: config.host, port: config.port)
-        transport.onConfigPacket  = { [weak self] mode, friction in
-            self?.applyConfig(mode: mode, frictionCenti: friction)
-        }
         transport.onStateFeedback = { [weak self] coasting, vx, vy in
             self?.coastingState = (vx, vy, coasting)
         }
@@ -222,13 +218,6 @@ final class WatchSessionManager: NSObject, ObservableObject {
         session.sendMessage(["cmd": "scan"], replyHandler: nil, errorHandler: nil)
     }
 
-    // MARK: - Config from desktop
-
-    func applyConfig(mode modeByte: UInt8, frictionCenti: UInt8) {
-        _ = modeByte
-        trackballFriction = min(0.99, max(0.5, Double(frictionCenti) / 100.0))
-    }
-
     func refreshWearSide() {
         let wrist = WKInterfaceDevice.current().wristLocation
         wearSide = (wrist == .right) ? .rightWrist : .leftWrist
@@ -253,13 +242,9 @@ extension WatchSessionManager: WCSessionDelegate {
         Task { @MainActor in self.applyWCSessionState(session) }
     }
 
-    /// Receive CONFIG / STATE_FEEDBACK / mode push from iPhone (WCSession relay path).
+    /// Receive STATE_FEEDBACK from iPhone (WCSession relay path).
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         Task { @MainActor in
-            if let raw = message["friction"],
-               let friction = (raw as? NSNumber)?.doubleValue ?? raw as? Double {
-                self.trackballFriction = min(0.99, max(0.5, friction))
-            }
             if let fb = message["state_fb"] as? [String: Any] {
                 let vx      = (fb["vx"] as? NSNumber)?.doubleValue ?? 0
                 let vy      = (fb["vy"] as? NSNumber)?.doubleValue ?? 0

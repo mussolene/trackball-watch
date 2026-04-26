@@ -161,31 +161,10 @@ pub mod packet_type {
     pub const CROWN: u8 = 0x03;
     pub const HANDSHAKE: u8 = 0x10;
     pub const HEARTBEAT: u8 = 0x11;
-    pub const CONFIG: u8 = 0x12;
     /// Desktop → Watch. Physics state feedback for syncing visual animation. ~10 Hz.
     pub const STATE_FEEDBACK: u8 = 0x13;
     pub const PING: u8 = 0x20;
     pub const PONG: u8 = 0x21;
-}
-
-/// Packet type `0x12 CONFIG` — fixed 3-byte payload: mode (u8), hand (u8), friction centi-units (u8, 50–99).
-/// Sent desktop→phone→watch to sync mode and on-watch coast damping with the host.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u8)]
-pub enum ConfigMode {
-    Trackpad = 0,
-    Trackball = 1,
-}
-
-impl TryFrom<u8> for ConfigMode {
-    type Error = u8;
-    fn try_from(v: u8) -> Result<Self, Self::Error> {
-        match v {
-            0 => Ok(Self::Trackpad),
-            1 => Ok(Self::Trackball),
-            other => Err(other),
-        }
-    }
 }
 
 // ── Framed packet ─────────────────────────────────────────────────────────────

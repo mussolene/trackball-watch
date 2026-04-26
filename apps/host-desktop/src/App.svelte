@@ -74,7 +74,6 @@
   function defaultConfig() {
     return {
       sensitivity: 1.0,
-      mode: 'trackball',
       accel: {
         curve: 's_curve',
         sensitivity: 1.0,
@@ -277,7 +276,7 @@
       <Settings bind:config on:save={saveConfig} />
     {:else if activeTab === 'pairing'}
       <div class="pairing-tab">
-        <p>In iPhone app: connect this desktop, keep relay active, then move finger on watch trackpad.</p>
+        <p>In iPhone app: connect this desktop, keep relay active, then move finger on watch trackball.</p>
         <div class="qr-frame">
           {#if qrDataUrl && pairingInfo}
             <img src={qrDataUrl} alt="Pairing QR" class="qr-image" />

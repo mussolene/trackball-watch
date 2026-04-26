@@ -6,7 +6,6 @@ import Darwin
 private let log = Logger(subsystem: "com.trackball-watch.app", category: "UDPRelay")
 
 /// UDP client that sends TBP packets to the desktop host.
-/// Also receives inbound CONFIG packets from desktop to sync mode changes.
 final class UDPRelay {
     enum RelayState: Equatable {
         case connecting
@@ -26,9 +25,6 @@ final class UDPRelay {
     private var pendingOutbound: [Data] = []
     private let maxPendingOutbound = 512
 
-    /// Called on main thread when a CONFIG packet (type 0x12) is received.
-    /// Payload is fixed 2 bytes: mode, friction (centi-units 50–99 → 0.50–0.99).
-    var onConfigPacket: ((UInt8, UInt8) -> Void)?
     /// Called on main thread when a STATE_FEEDBACK packet (type 0x13) is received.
     /// Parameters: isCoasting, vx (pixels/frame), vy (pixels/frame).
     var onStateFeedback: ((Bool, Double, Double) -> Void)?
@@ -90,11 +86,6 @@ final class UDPRelay {
             if let data, data.count >= 9 {
                 // Header: [seq:2][type:1][flags:1][ts:4] = 8 bytes, payload starts at byte 8
                 let packetType = data[2]
-                if packetType == 0x12, data.count >= 10 { // CONFIG: 8-byte header + 2-byte payload
-                    let modeByte = data[8]
-                    let frictionByte = data[9]
-                    DispatchQueue.main.async { self?.onConfigPacket?(modeByte, frictionByte) }
-                }
                 if packetType == 0x13, data.count >= 13 { // STATE_FEEDBACK: header(8) + coasting(1) + vx_fp(2) + vy_fp(2)
                     let isCoasting = data[8] != 0
                     let vxFP = Int16(bitPattern: UInt16(data[9]) | (UInt16(data[10]) << 8))

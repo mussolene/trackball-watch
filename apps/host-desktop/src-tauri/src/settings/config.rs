@@ -11,7 +11,6 @@ use crate::engine::accel::AccelConfig;
 #[serde(default)]
 pub struct AppConfig {
     pub sensitivity: f64,
-    pub mode: InputMode,
     pub accel: AccelConfig,
     pub kalman_q_pos: f64,
     pub kalman_q_vel: f64,
@@ -51,19 +50,10 @@ impl SmoothingProfile {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum InputMode {
-    Trackpad,
-    #[default]
-    Trackball,
-}
-
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
             sensitivity: 1.0,
-            mode: InputMode::Trackball,
             accel: AccelConfig::default(),
             kalman_q_pos: 0.1,
             kalman_q_vel: 1.0,
