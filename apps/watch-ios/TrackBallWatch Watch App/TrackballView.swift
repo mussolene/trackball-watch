@@ -2,7 +2,7 @@ import SwiftUI
 import WatchKit
 import simd
 
-/// Watch trackball surface copied from the iPhone debug remote mechanics, adapted for watchOS.
+/// Watch trackball surface intentionally mirrors the iPhone debug remote mechanics.
 struct TrackballView: View {
     @EnvironmentObject var sessionManager: WatchSessionManager
     @EnvironmentObject var hostStore: HostStore
@@ -11,9 +11,11 @@ struct TrackballView: View {
     @State private var isStreamingCoastTouch = false
     @State private var currentTrackballDiameter: CGFloat = 120
     @State private var visibleFingerLocation: CGPoint?
-    @State private var showSettings = false
     @State private var localTrackballFriction = 0.850
     @State private var virtualTrackballScale = 1.0
+    @State private var isScrollDragging = false
+    @State private var lastScrollLocationY: CGFloat?
+    @State private var lastScrollTimestamp: Date = .now
 
     private let tick = Timer.publish(every: 1.0 / 60.0, on: .main, in: .common).autoconnect()
 
@@ -30,23 +32,7 @@ struct TrackballView: View {
 
     var body: some View {
         GeometryReader { geo in
-            WatchTrackballRemoteSurface(
-                engine: engine,
-                fingerLocation: visibleFingerLocation,
-                hostLabel: currentHostLabel,
-                canSwitchHosts: hostStore.hosts.count > 1,
-                onChanged: onDragChanged,
-                onEnded: onDragEnded,
-                onTap: handleTapGesture,
-                onDoubleTap: handleDoubleTapGesture,
-                onLongPress: handleLongPressGesture,
-                onSwitchHost: switchToNextHost,
-                onSettings: showSettingsPanel,
-                onDiameterChanged: { diameter in
-                    currentTrackballDiameter = diameter
-                }
-            )
-            .frame(width: geo.size.width, height: geo.size.height)
+            trackballPanel(containerSize: geo.size, isLandscape: geo.size.width > geo.size.height)
         }
         .background(
             LinearGradient(
@@ -63,16 +49,35 @@ struct TrackballView: View {
             sessionManager.refreshWearSide()
         }
         .onReceive(tick, perform: tickPhysics)
-        .sheet(isPresented: $showSettings) {
-            WatchTrackballSettingsView(
-                hostLabel: currentHostLabel,
-                connectionText: connectionText,
-                virtualTrackballScale: $virtualTrackballScale,
-                localTrackballFriction: $localTrackballFriction,
-                currentVirtualDiameter: currentVirtualTrackballDiameter,
-                onReset: resetTrackballState
-            )
-        }
+    }
+
+    private func trackballPanel(containerSize: CGSize, isLandscape: Bool) -> some View {
+        let portraitHeight = min(max(260, containerSize.width - 40), containerSize.height * 0.52)
+        return TrackballRemoteSurface(
+            engine: engine,
+            fingerLocation: visibleFingerLocation,
+            hostLabel: currentHostLabel,
+            canSwitchHosts: hostStore.hosts.count > 1,
+            isScrollDragging: isScrollDragging,
+            onChanged: onDragChanged,
+            onEnded: onDragEnded,
+            onTap: handleTapGesture,
+            onDoubleTap: handleDoubleTapGesture,
+            onLongPress: handleLongPressGesture,
+            onScrollChanged: handleScrollChanged,
+            onScrollEnded: handleScrollEnded,
+            onSwitchHost: switchToNextHost,
+            onDiameterChanged: { diameter in
+                currentTrackballDiameter = diameter
+            }
+        )
+        .frame(
+            maxWidth: .infinity,
+            minHeight: isLandscape ? 260 : portraitHeight,
+            maxHeight: isLandscape ? .infinity : portraitHeight,
+            alignment: .top
+        )
+        .padding(20)
     }
 }
 
@@ -95,11 +100,6 @@ private extension TrackballView {
                 return "Connected"
             }
         }
-    }
-
-    func showSettingsPanel() {
-        showSettings = true
-        WKInterfaceDevice.current().play(.click)
     }
 
     func resetTrackballState() {
@@ -168,6 +168,46 @@ private extension TrackballView {
         WKInterfaceDevice.current().play(.failure)
     }
 
+    func handleScrollChanged(_ value: DragGesture.Value) {
+        let now = Date.now
+        if !isScrollDragging {
+            isScrollDragging = true
+            lastScrollLocationY = value.location.y
+            lastScrollTimestamp = now
+            WKInterfaceDevice.current().play(.start)
+            return
+        }
+
+        guard let previousY = lastScrollLocationY else {
+            lastScrollLocationY = value.location.y
+            lastScrollTimestamp = now
+            return
+        }
+
+        let deltaPoints = previousY - value.location.y
+        let dt = max(1e-3, now.timeIntervalSince(lastScrollTimestamp))
+        lastScrollLocationY = value.location.y
+        lastScrollTimestamp = now
+
+        let rawDelta = Int((deltaPoints * 4.0).rounded())
+        guard rawDelta != 0 else { return }
+
+        let velocity = Int((Double(rawDelta) / dt / 10.0).rounded())
+        sessionManager.send(
+            TBPPacket.crown(
+                delta: Int16(clamping: rawDelta),
+                velocity: Int16(clamping: velocity)
+            )
+        )
+        WKInterfaceDevice.current().play(.click)
+    }
+
+    func handleScrollEnded() {
+        isScrollDragging = false
+        lastScrollLocationY = nil
+        lastScrollTimestamp = .now
+    }
+
     func send(_ events: [TrackballEngineEvent]) {
         for event in events {
             switch event {
@@ -209,133 +249,152 @@ private extension TrackballView {
 
 // MARK: - Surface
 
-private struct WatchTrackballRemoteSurface: View {
+private struct TrackballRemoteSurface: View {
     @ObservedObject var engine: TrackballInteractionEngine
 
     let fingerLocation: CGPoint?
     let hostLabel: String
     let canSwitchHosts: Bool
+    let isScrollDragging: Bool
     let onChanged: (DragGesture.Value, CGFloat) -> Void
     let onEnded: (DragGesture.Value, CGFloat) -> Void
     let onTap: () -> Void
     let onDoubleTap: () -> Void
     let onLongPress: () -> Void
+    let onScrollChanged: (DragGesture.Value) -> Void
+    let onScrollEnded: () -> Void
     let onSwitchHost: () -> Void
-    let onSettings: () -> Void
     let onDiameterChanged: (CGFloat) -> Void
 
     var body: some View {
         GeometryReader { geo in
             let haloScale: CGFloat = 1.22
-            let padInset: CGFloat = 12
-            let diameter = Self.trackballDiameter(
+            let padInset: CGFloat = 24
+            let layout = Self.layoutForPad(
                 width: geo.size.width,
                 height: geo.size.height,
                 haloScale: haloScale,
                 padInset: padInset
             )
-            let outerDiameter = diameter * haloScale
+            let diameter = layout.diameter
+            let outerDiameter = layout.outerDiameter
+            let scrollWheelGap = layout.scrollWheelGap
+            let scrollWheelWidth = layout.scrollWheelWidth
+            let scrollWheelHeight = layout.scrollWheelHeight
+            // DragGesture is on the inner `outerDiameter` ZStack, so `value.location` is in that
+            // square's local space - not the full `geo`. The globe Canvas is centered inside it.
             let globeInset = (outerDiameter - diameter) / 2
-            let fingerInGlobeCanvas = fingerLocation.map { loc in
+            let fingerInGlobeCanvas: CGPoint? = fingerLocation.map { loc in
                 CGPoint(x: loc.x - globeInset, y: loc.y - globeInset)
             }
-
             ZStack {
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(cornerRadius: 28)
                     .fill(Color.white.opacity(0.04))
 
-                ZStack {
-                    Circle()
-                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
-                        .frame(width: diameter * 1.22, height: diameter * 1.22)
+                HStack(alignment: .center, spacing: scrollWheelGap) {
+                    ZStack {
+                        Circle()
+                            .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                            .frame(width: diameter * 1.22, height: diameter * 1.22)
 
-                    Circle()
-                        .stroke(
-                            Color.white.opacity(0.18),
-                            style: StrokeStyle(
-                                lineWidth: max(4, diameter * 0.05),
-                                lineCap: .round
-                            )
-                        )
-                        .frame(width: diameter * 1.08, height: diameter * 1.08)
+                        Circle()
+                            .stroke(Color.white.opacity(0.18),
+                                    style: StrokeStyle(
+                                        lineWidth: max(5, diameter * 0.05),
+                                        lineCap: .round
+                                    ))
+                            .frame(width: diameter * 1.08, height: diameter * 1.08)
 
-                    WatchTrackballGlobeView(
-                        orientation: engine.orientation,
-                        diameter: diameter,
-                        fingerLocation: fingerInGlobeCanvas
-                    )
-                    .shadow(
-                        color: .black.opacity(engine.isDragging ? 0.76 : 0.62),
-                        radius: engine.isDragging ? 13 : 10,
-                        x: 2,
-                        y: engine.isDragging ? 12 : 10
-                    )
-                }
-                .frame(width: outerDiameter, height: outerDiameter)
-                .overlay {
-                    Circle()
-                        .fill(Color.clear)
-                        .frame(width: diameter, height: diameter)
-                        .contentShape(Circle())
-                        .simultaneousGesture(
-                            ExclusiveGesture(
-                                TapGesture(count: 2),
-                                TapGesture(count: 1)
+                        TrackballGlobeView(
+                            orientation: engine.orientation,
+                            diameter: diameter,
+                            fingerLocation: fingerInGlobeCanvas
+                        )
+                    }
+                    .frame(width: outerDiameter, height: outerDiameter)
+                    .overlay {
+                        Circle()
+                            .fill(Color.clear)
+                            .frame(width: diameter, height: diameter)
+                            .contentShape(Circle())
+                            .simultaneousGesture(
+                                ExclusiveGesture(
+                                    TapGesture(count: 2),
+                                    TapGesture(count: 1)
+                                )
+                                .onEnded { result in
+                                    switch result {
+                                    case .first:
+                                        onDoubleTap()
+                                    case .second:
+                                        onTap()
+                                    }
+                                }
                             )
-                            .onEnded { result in
-                                switch result {
-                                case .first:
-                                    onDoubleTap()
-                                case .second:
-                                    onTap()
+                            .simultaneousGesture(
+                                LongPressGesture(minimumDuration: 0.48)
+                                    .onEnded { _ in
+                                        onLongPress()
+                                    }
+                            )
+                    }
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                            .onChanged { value in
+                                if !engine.isDragging,
+                                   !isInsideTrackball(value.location, diameter: diameter, outerDiameter: outerDiameter) {
+                                    return
                                 }
+                                onChanged(value, diameter)
                             }
-                        )
-                        .simultaneousGesture(
-                            LongPressGesture(minimumDuration: 0.48)
-                                .onEnded { _ in
-                                    onLongPress()
-                                }
-                        )
+                            .onEnded { value in
+                                guard engine.isDragging else { return }
+                                onEnded(value, diameter)
+                            }
+                    )
+
+                    MouseScrollWheelControl(
+                        isActive: isScrollDragging,
+                        wheelHeight: scrollWheelHeight,
+                        wheelWidth: scrollWheelWidth
+                    )
+                    .frame(width: scrollWheelWidth, height: scrollWheelHeight)
+                    .contentShape(Rectangle())
+                    .gesture(
+                        DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                            .onChanged(onScrollChanged)
+                            .onEnded { _ in
+                                onScrollEnded()
+                            }
+                    )
+                    .accessibilityLabel("Scroll")
+                    .accessibilityHint("Drag up or down to scroll the desktop")
                 }
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0, coordinateSpace: .local)
-                        .onChanged { value in
-                            if !engine.isDragging,
-                               !isInsideTrackball(value.location, diameter: diameter, outerDiameter: outerDiameter) {
-                                return
-                            }
-                            onChanged(value, diameter)
-                        }
-                        .onEnded { value in
-                            guard engine.isDragging else { return }
-                            onEnded(value, diameter)
-                        }
-                )
-                .accessibilityLabel("Trackball")
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .overlay(alignment: .topTrailing) {
-                SurfaceIconButton(
-                    systemName: "desktopcomputer",
-                    isEnabled: canSwitchHosts,
-                    action: onSwitchHost
-                )
+                Button(action: onSwitchHost) {
+                    Image(systemName: "desktopcomputer")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(
+                            Circle()
+                                .fill(Color.white.opacity(canSwitchHosts ? 0.18 : 0.09))
+                        )
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                        )
+                }
+                .buttonStyle(.plain)
                 .disabled(!canSwitchHosts)
                 .opacity(canSwitchHosts ? 1.0 : 0.5)
-                .padding(8)
+                .padding(14)
                 .accessibilityLabel("Switch Desktop")
                 .accessibilityHint(hostLabel)
-            }
-            .overlay(alignment: .bottomTrailing) {
-                SurfaceIconButton(
-                    systemName: "gearshape",
-                    isEnabled: true,
-                    action: onSettings
-                )
-                .padding(8)
-                .accessibilityLabel("Trackball Settings")
             }
             .onAppear {
                 onDiameterChanged(diameter)
@@ -352,118 +411,136 @@ private struct WatchTrackballRemoteSurface: View {
         return hypot(location.x - center.x, location.y - center.y) <= radius
     }
 
-    private static func trackballDiameter(
+    private static func layoutForPad(
         width: CGFloat,
         height: CGFloat,
         haloScale: CGFloat,
         padInset: CGFloat
-    ) -> CGFloat {
-        let maxSide = max(1, min(width - padInset, height - padInset))
-        return max(104, min(maxSide / haloScale, 170))
+    ) -> (
+        diameter: CGFloat,
+        outerDiameter: CGFloat,
+        scrollWheelGap: CGFloat,
+        scrollWheelWidth: CGFloat,
+        scrollWheelHeight: CGFloat
+    ) {
+        let maxSide = min(width - padInset, height - padInset)
+        var diameter = max(180, min(maxSide / haloScale, 420))
+        var outerDiameter = diameter * haloScale
+        var scrollWheelGap = max(8, min(14, outerDiameter * 0.035))
+        var scrollWheelWidth = max(22, min(30, outerDiameter * 0.082))
+        while diameter > 120
+            && outerDiameter + scrollWheelGap + scrollWheelWidth > width - padInset {
+            diameter -= 4
+            outerDiameter = diameter * haloScale
+            scrollWheelGap = max(8, min(14, outerDiameter * 0.035))
+            scrollWheelWidth = max(22, min(30, outerDiameter * 0.082))
+        }
+        let scrollWheelHeight = min(
+            max(130, outerDiameter * 0.88),
+            min(outerDiameter * 0.96, height - 40)
+        )
+        return (diameter, outerDiameter, scrollWheelGap, scrollWheelWidth, scrollWheelHeight)
     }
 }
 
-private struct SurfaceIconButton: View {
-    let systemName: String
-    let isEnabled: Bool
-    let action: () -> Void
+private struct MouseScrollWheelControl: View {
+    let isActive: Bool
+    let wheelHeight: CGFloat
+    let wheelWidth: CGFloat
+
+    private var ridgeCount: Int {
+        let n = Int((wheelHeight / 14).rounded(.down))
+        return max(5, min(11, n))
+    }
 
     var body: some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(.white)
-                .frame(width: 32, height: 32)
-                .background(
-                    Circle()
-                        .fill(Color.white.opacity(isEnabled ? 0.18 : 0.09))
+        let corner = wheelWidth * 0.42
+        ZStack {
+            RoundedRectangle(cornerRadius: corner + 3)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color.white.opacity(0.06),
+                            Color.white.opacity(0.02)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
                 )
                 .overlay(
-                    Circle()
-                        .stroke(Color.white.opacity(0.14), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: corner + 3)
+                        .stroke(Color.white.opacity(0.10), lineWidth: 1)
                 )
-        }
-        .buttonStyle(.plain)
-    }
-}
+                .padding(-3)
 
-// MARK: - Settings
-
-private struct WatchTrackballSettingsView: View {
-    let hostLabel: String
-    let connectionText: String
-    @Binding var virtualTrackballScale: Double
-    @Binding var localTrackballFriction: Double
-    let currentVirtualDiameter: CGFloat
-    let onReset: () -> Void
-
-    var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 12) {
-                Text(hostLabel)
-                    .font(.headline)
-                    .foregroundStyle(.white)
-                    .lineLimit(1)
-
-                Text(connectionText)
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.68))
-
-                SliderRow(
-                    title: "Ball Size",
-                    value: $virtualTrackballScale,
-                    range: 0.55...10.0
+            RoundedRectangle(cornerRadius: corner)
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(white: 0.22).opacity(isActive ? 1.0 : 0.92),
+                            Color(white: 0.10).opacity(isActive ? 1.0 : 0.88),
+                            Color(white: 0.06).opacity(0.95)
+                        ],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
                 )
-
-                Text("\(Int(currentVirtualDiameter.rounded())) pt")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.68))
-                    .monospacedDigit()
-
-                SliderRow(
-                    title: "Friction",
-                    value: $localTrackballFriction,
-                    range: 0.550...0.995
+                .overlay(
+                    RoundedRectangle(cornerRadius: corner)
+                        .stroke(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(isActive ? 0.38 : 0.22),
+                                    Color.white.opacity(0.06)
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
                 )
+                .shadow(color: .black.opacity(0.45), radius: isActive ? 5 : 3, y: 2)
 
-                Button("Reset") {
-                    onReset()
+            VStack(spacing: max(3, wheelHeight * 0.022)) {
+                ForEach(0 ..< ridgeCount, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 0.8)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    Color.white.opacity(isActive ? 0.42 : 0.26),
+                                    Color.white.opacity(0.10)
+                                ],
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
+                        )
+                        .frame(height: max(1.5, wheelWidth * 0.12))
+                        .opacity(i % 2 == 0 ? 1.0 : 0.72)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(.white.opacity(0.18))
             }
-            .padding(14)
-        }
-        .background(Color(red: 0.03, green: 0.04, blue: 0.07).ignoresSafeArea())
-    }
-}
+            .padding(.vertical, wheelHeight * 0.07)
+            .padding(.horizontal, wheelWidth * 0.14)
 
-private struct SliderRow: View {
-    let title: String
-    @Binding var value: Double
-    let range: ClosedRange<Double>
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text(title)
-                    .foregroundStyle(.white)
+            VStack {
+                Capsule()
+                    .fill(Color.white.opacity(isActive ? 0.20 : 0.12))
+                    .frame(height: 2)
+                    .padding(.horizontal, wheelWidth * 0.12)
                 Spacer()
-                Text(String(format: "%.3f", value))
-                    .foregroundStyle(.white.opacity(0.68))
-                    .monospacedDigit()
+                Capsule()
+                    .fill(Color.white.opacity(isActive ? 0.16 : 0.10))
+                    .frame(height: 2)
+                    .padding(.horizontal, wheelWidth * 0.12)
             }
-            .font(.caption)
-
-            Slider(value: $value, in: range)
-                .tint(.white)
+            .padding(.vertical, 2)
         }
+        .frame(width: wheelWidth, height: wheelHeight)
     }
 }
 
 // MARK: - Globe
 
-private struct WatchTrackballGlobeView: View {
+private struct TrackballGlobeView: View {
     let orientation: simd_quatd
     let diameter: CGFloat
     let fingerLocation: CGPoint?
